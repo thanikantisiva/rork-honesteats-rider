@@ -24,6 +24,7 @@
         "NSCameraUsageDescription": "We need camera access to capture document photos for verification.",
         "NSPhotoLibraryUsageDescription": "We need photo library access to upload documents for verification.",
         "UIBackgroundModes": ["location"]
+        
       }
     },
     "android": {
