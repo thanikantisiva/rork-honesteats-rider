@@ -114,8 +114,11 @@ export default function SignupScreen() {
   const handleSubmit = async () => {
     setIsSubmitting(true);
     try {
+      console.log('[Signup] Starting signup process...');
+      console.log('[Signup] Uploading documents to S3...');
+      
       const response = await riderAuthAPI.signup({
-        phone: formData.phone,
+        phone: `+91${formData.phone}`,  // Add +91 prefix
         firstName: formData.firstName,
         lastName: formData.lastName,
         address: formData.address,
@@ -125,6 +128,7 @@ export default function SignupScreen() {
         panImageBase64: formData.panImageBase64,
       });
 
+      console.log('[Signup] Application submitted successfully');
       showAlert(
         'Application Submitted!',
         response.message,
@@ -138,8 +142,19 @@ export default function SignupScreen() {
         'success'
       );
     } catch (error: any) {
-      console.error('Signup error:', error);
-      showAlert('Signup Failed', error.message || 'Failed to submit application. Please try again.', undefined, 'error');
+      console.error('[Signup] Signup error:', error);
+      let errorMessage = 'Failed to submit application. Please try again.';
+      
+      if (error.message) {
+        errorMessage = error.message;
+      }
+      
+      // Specific error messages
+      if (error.message?.includes('presigned-url') || error.message?.includes('S3')) {
+        errorMessage = 'Failed to upload documents. Please check your internet connection and try again.';
+      }
+      
+      showAlert('Signup Failed', errorMessage, undefined, 'error');
     } finally {
       setIsSubmitting(false);
     }
@@ -195,14 +210,17 @@ export default function SignupScreen() {
 
               <View style={styles.inputGroup}>
                 <Text style={styles.label}>Mobile Number *</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="10-digit mobile number"
-                  value={formData.phone}
-                  onChangeText={(text) => updateField('phone', text.replace(/[^0-9]/g, ''))}
-                  keyboardType="phone-pad"
-                  maxLength={10}
-                />
+                <View style={styles.phoneInput}>
+                  <Text style={styles.countryCode}>+91</Text>
+                  <TextInput
+                    style={styles.phoneInputField}
+                    placeholder="10-digit mobile number"
+                    value={formData.phone}
+                    onChangeText={(text) => updateField('phone', text.replace(/[^0-9]/g, ''))}
+                    keyboardType="phone-pad"
+                    maxLength={10}
+                  />
+                </View>
               </View>
 
               <View style={styles.inputGroup}>
@@ -374,7 +392,10 @@ export default function SignupScreen() {
               activeOpacity={0.8}
             >
               {isSubmitting ? (
-                <ActivityIndicator color="#FFFFFF" />
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <ActivityIndicator color="#FFFFFF" />
+                  <Text style={styles.submitButtonText}>Uploading documents...</Text>
+                </View>
               ) : (
                 <Text style={styles.submitButtonText}>Submit Application</Text>
               )}
@@ -447,6 +468,32 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#D1D5DB',
     borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    fontSize: 16,
+    color: '#111827',
+  },
+  phoneInput: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  countryCode: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#111827',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#F3F4F6',
+    borderRightWidth: 1,
+    borderRightColor: '#D1D5DB',
+  },
+  phoneInputField: {
+    flex: 1,
     paddingHorizontal: 16,
     paddingVertical: 12,
     fontSize: 16,

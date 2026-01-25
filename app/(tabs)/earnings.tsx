@@ -15,6 +15,7 @@ import {
 } from 'react-native';
 import { Stack } from 'expo-router';
 import { IndianRupee, TrendingUp, Package, Clock } from 'lucide-react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '@/contexts/AuthContext';
 import { riderEarningsAPI } from '@/lib/api';
 import { EarningsSummary } from '@/types';
@@ -22,6 +23,7 @@ import { EarningsSummary } from '@/types';
 type Period = 'today' | 'week' | 'month';
 
 export default function EarningsScreen() {
+  const insets = useSafeAreaInsets();
   const { rider } = useAuth();
   const [selectedPeriod, setSelectedPeriod] = useState<Period>('today');
   const [earnings, setEarnings] = useState<EarningsSummary | null>(null);
@@ -52,7 +54,7 @@ export default function EarningsScreen() {
       <Stack.Screen options={{ headerShown: false }} />
       <View style={styles.container}>
         {/* Header */}
-        <View style={styles.header}>
+        <View style={[styles.header, { paddingTop: insets.top + 16 }]}>
           <Text style={styles.headerTitle}>Earnings</Text>
         </View>
 
@@ -150,7 +152,6 @@ const styles = StyleSheet.create({
   header: {
     backgroundColor: '#FFFFFF',
     paddingHorizontal: 20,
-    paddingTop: 60,
     paddingBottom: 16,
     borderBottomWidth: 1,
     borderBottomColor: '#E5E7EB',

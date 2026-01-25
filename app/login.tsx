@@ -17,17 +17,22 @@ import {
 import { useRouter, Stack } from 'expo-router';
 import { Phone, ArrowRight } from 'lucide-react-native';
 import { useThemedAlert } from '@/components/ThemedAlert';
-import { riderAuthAPI } from '@/lib/api';
-import auth from '@react-native-firebase/auth';
+import { useAuth } from '@/contexts/AuthContext';
+import { riderAuthAPI, userAPI } from '@/lib/api';
+import { sendFirebaseOTP, verifyFirebaseOTP } from '@/lib/firebase-auth';
+import { requestNotificationPermission, getFCMToken } from '@/services/firebase-messaging';
+import type { FirebaseAuthTypes } from '@react-native-firebase/auth';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export default function LoginScreen() {
   const router = useRouter();
   const { showAlert, AlertComponent } = useThemedAlert();
+  const { login } = useAuth();
   const [phone, setPhone] = useState('');
   const [otp, setOtp] = useState('');
-  const [confirm, setConfirm] = useState<any>(null);
+  const [confirm, setConfirm] = useState<FirebaseAuthTypes.ConfirmationResult | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [riderData, setRiderData] = useState<{ riderId: string; phone: string; name: string } | null>(null);
 
   const handleSendOTP = async () => {
     if (!phone || phone.length !== 10) {
@@ -37,8 +42,10 @@ export default function LoginScreen() {
 
     setIsLoading(true);
     try {
-      // Check if rider can login
-      const statusResponse = await riderAuthAPI.checkLogin(phone);
+      const phoneNumber = `+91${phone}`;
+      
+      // Check if rider can login (send with +91 prefix)
+      const statusResponse = await riderAuthAPI.checkLogin(phoneNumber);
 
       if (statusResponse.status === 'NOT_FOUND') {
         showAlert(
@@ -58,7 +65,7 @@ export default function LoginScreen() {
       }
 
       if (statusResponse.status === 'SIGNUP_DONE') {
-        await AsyncStorage.setItem('@rider_phone', phone);
+        await AsyncStorage.setItem('@rider_phone', phoneNumber);
         showAlert(
           'Under Verification',
           statusResponse.message,
@@ -87,15 +94,30 @@ export default function LoginScreen() {
       }
 
       // Status is APPROVED - proceed with OTP
-      const confirmation = await auth().signInWithPhoneNumber(`+91${phone}`);
-      setConfirm(confirmation);
+      console.log('📤 Sending OTP to rider:', phoneNumber);
+      const result = await sendFirebaseOTP(phoneNumber);
       
-      // Store rider info
-      await AsyncStorage.setItem('@rider_phone', phone);
-      await AsyncStorage.setItem('@rider_id', statusResponse.riderId!);
-      await AsyncStorage.setItem('@rider_name', statusResponse.name!);
+      if (result.success && result.confirmation) {
+        console.log('✅ OTP sent successfully');
+        setConfirm(result.confirmation);
+        
+        // Store rider data temporarily (will be saved to context after OTP verification)
+        setRiderData({
+          riderId: statusResponse.riderId!,
+          phone: statusResponse.phone!,
+          name: statusResponse.name!,
+        });
 
-      showAlert('OTP Sent', 'Please enter the 6-digit OTP sent to your phone', undefined, 'success');
+        // Show test message for test numbers
+        if (result.testMessage) {
+          showAlert('OTP Sent (Test Mode)', result.testMessage, undefined, 'info');
+        } else {
+          showAlert('OTP Sent', 'Please enter the 6-digit OTP sent to your phone', undefined, 'success');
+        }
+      } else {
+        console.error('❌ Failed to send OTP:', result.error);
+        showAlert('Error', result.error || 'Failed to send OTP. Please try again.', undefined, 'error');
+      }
     } catch (error: any) {
       console.error('Send OTP error:', error);
       showAlert('Error', error.message || 'Failed to send OTP. Please try again.', undefined, 'error');
@@ -110,30 +132,80 @@ export default function LoginScreen() {
       return;
     }
 
+    if (!confirm) {
+      showAlert('Error', 'Please request OTP first', undefined, 'error');
+      return;
+    }
+
+    if (!riderData) {
+      showAlert('Error', 'Rider data not found. Please try again.', undefined, 'error');
+      return;
+    }
+
     setIsLoading(true);
     try {
-      await confirm.confirm(otp);
+      console.log('🔐 Verifying OTP...');
+      const result = await verifyFirebaseOTP(confirm, otp);
       
-      // Mark as logged in
-      await AsyncStorage.setItem('@rider_logged_in', 'true');
-
-      showAlert(
-        'Login Successful',
-        'Welcome to HonestEats Rider!',
-        [
-          {
-            text: 'Start',
-            style: 'default',
-            onPress: () => router.replace('/(tabs)'),
-          },
-        ],
-        'success'
-      );
+      if (!result.success) {
+        showAlert('Verification Failed', result.error || 'Invalid OTP', undefined, 'error');
+        setIsLoading(false);
+        return;
+      }
+      
+      console.log('✅ OTP verified successfully');
+      
+      // Update AuthContext with rider data - this will trigger navigation
+      await login(riderData);
+      
+      // Register FCM token for push notifications
+      await registerFCMToken(riderData.phone);
+      
+      console.log('✅ Logged in successfully, redirecting to home...');
+      
+      // Navigation will be handled automatically by _layout.tsx
+      // based on isLoggedIn state change
     } catch (error: any) {
       console.error('Verify OTP error:', error);
       showAlert('Invalid OTP', 'The OTP you entered is incorrect. Please try again.', undefined, 'error');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const registerFCMToken = async (phone: string) => {
+    try {
+      console.log('📱 Starting FCM token registration for rider:', phone);
+      
+      // Request permission first
+      console.log('🔔 Requesting notification permission...');
+      const hasPermission = await requestNotificationPermission();
+      if (!hasPermission) {
+        console.log('⚠️ Notification permission not granted - skipping FCM token');
+        return;
+      }
+      console.log('✅ Notification permission granted');
+      
+      // Get FCM token
+      console.log('🔄 Fetching FCM token from Firebase...');
+      const fcmToken = await getFCMToken();
+      
+      if (!fcmToken) {
+        console.error('❌ FCM token not available (emulator detected, needs physical device)');
+        return;
+      }
+      
+      console.log('✅ FCM Token obtained successfully');
+      console.log('📤 Sending FCM token to backend API...');
+      
+      // Send token to backend
+      const result = await userAPI.registerFCMToken(phone, fcmToken);
+      console.log('✅ Backend response:', result);
+      console.log('✅ FCM token registered successfully - rider will receive notifications!');
+    } catch (error: any) {
+      console.error('❌ Failed to register FCM token:', error);
+      console.error('❌ Error details:', error.message);
+      // Don't throw - notification registration failure shouldn't block login
     }
   };
 
@@ -193,7 +265,7 @@ export default function LoginScreen() {
                 <Text style={styles.label}>Enter OTP</Text>
                 <TextInput
                   style={styles.input}
-                  placeholder="6-digit OTP"
+                  placeholder="123456"
                   value={otp}
                   onChangeText={(text) => setOtp(text.replace(/[^0-9]/g, ''))}
                   keyboardType="number-pad"

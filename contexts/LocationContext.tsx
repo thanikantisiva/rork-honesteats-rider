@@ -104,7 +104,35 @@ export function LocationProvider({ children }: { children: ReactNode }) {
 
     try {
       const newStatus = !isOnline;
-      await riderStatusAPI.toggleStatus(rider.riderId, newStatus);
+      
+      // If going online, get current location first
+      if (newStatus) {
+        try {
+          const { status } = await Location.requestForegroundPermissionsAsync();
+          if (status === 'granted') {
+            const location = await Location.getCurrentPositionAsync({
+              accuracy: Location.Accuracy.High,
+            });
+            
+            const { latitude, longitude } = location.coords;
+            console.log(`📍 Going online with location: ${latitude}, ${longitude}`);
+            
+            // Send location with status update
+            await riderStatusAPI.toggleStatus(rider.riderId, newStatus, latitude, longitude);
+            setCurrentLocation({ lat: latitude, lng: longitude });
+          } else {
+            // No location permission, just update status without location
+            await riderStatusAPI.toggleStatus(rider.riderId, newStatus);
+          }
+        } catch (locationError) {
+          console.error('Failed to get location, updating status without it:', locationError);
+          await riderStatusAPI.toggleStatus(rider.riderId, newStatus);
+        }
+      } else {
+        // Going offline, no location needed
+        await riderStatusAPI.toggleStatus(rider.riderId, newStatus);
+      }
+      
       setIsOnline(newStatus);
       console.log(`🔄 Rider status: ${newStatus ? 'ONLINE' : 'OFFLINE'}`);
     } catch (error) {

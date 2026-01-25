@@ -16,6 +16,7 @@ import {
 } from 'react-native';
 import { useRouter, Stack } from 'expo-router';
 import { Package, MapPin } from 'lucide-react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useOrders } from '@/contexts/OrdersContext';
 import { useLocation } from '@/contexts/LocationContext';
 import { useAuth } from '@/contexts/AuthContext';
@@ -26,6 +27,7 @@ type TabFilter = 'all' | 'new' | 'active' | 'completed';
 
 export default function OrdersScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { rider } = useAuth();
   const { orders, activeOrders, completedOrders, isLoading, refreshOrders, acceptOrder, rejectOrder } = useOrders();
   const { isOnline, toggleOnline, currentLocation } = useLocation();
@@ -99,7 +101,7 @@ export default function OrdersScreen() {
       <Stack.Screen options={{ headerShown: false }} />
       <View style={styles.container}>
         {/* Header */}
-        <View style={styles.header}>
+        <View style={[styles.header, { paddingTop: insets.top + 16 }]}>
           <View>
             <Text style={styles.greeting}>Hello, {rider?.name.split(' ')[0]}</Text>
             <Text style={styles.subGreeting}>
@@ -199,7 +201,6 @@ const styles = StyleSheet.create({
   header: {
     backgroundColor: '#FFFFFF',
     paddingHorizontal: 20,
-    paddingTop: 60,
     paddingBottom: 16,
     flexDirection: 'row',
     justifyContent: 'space-between',
