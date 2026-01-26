@@ -14,6 +14,7 @@ import {
   Platform,
   ActivityIndicator,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, Stack } from 'expo-router';
 import { Phone, ArrowRight } from 'lucide-react-native';
 import { useThemedAlert } from '@/components/ThemedAlert';
@@ -212,101 +213,103 @@ export default function LoginScreen() {
   return (
     <>
       <Stack.Screen options={{ headerShown: false }} />
-      <KeyboardAvoidingView
-        style={styles.container}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
-        <View style={styles.content}>
-          <View style={styles.header}>
-            <View style={styles.iconContainer}>
-              <Phone size={40} color="#3B82F6" />
+      <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
+        <KeyboardAvoidingView
+          style={styles.keyboardView}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          <View style={styles.content}>
+            <View style={styles.header}>
+              <View style={styles.iconContainer}>
+                <Phone size={40} color="#3B82F6" />
+              </View>
+              <Text style={styles.title}>Login</Text>
+              <Text style={styles.subtitle}>Enter your registered mobile number</Text>
             </View>
-            <Text style={styles.title}>Login</Text>
-            <Text style={styles.subtitle}>Enter your registered mobile number</Text>
-          </View>
 
-          {!confirm ? (
-            <View style={styles.form}>
-              <View style={styles.inputGroup}>
-                <Text style={styles.label}>Mobile Number</Text>
-                <View style={styles.phoneInput}>
-                  <Text style={styles.countryCode}>+91</Text>
+            {!confirm ? (
+              <View style={styles.form}>
+                <View style={styles.inputGroup}>
+                  <Text style={styles.label}>Mobile Number</Text>
+                  <View style={styles.phoneInput}>
+                    <Text style={styles.countryCode}>+91</Text>
+                    <TextInput
+                      style={styles.input}
+                      placeholder="10-digit mobile number"
+                      value={phone}
+                      onChangeText={(text) => setPhone(text.replace(/[^0-9]/g, ''))}
+                      keyboardType="phone-pad"
+                      maxLength={10}
+                      editable={!isLoading}
+                    />
+                  </View>
+                </View>
+
+                <TouchableOpacity
+                  style={[styles.sendButton, isLoading && styles.sendButtonDisabled]}
+                  onPress={handleSendOTP}
+                  disabled={isLoading}
+                  activeOpacity={0.8}
+                >
+                  {isLoading ? (
+                    <ActivityIndicator color="#FFFFFF" />
+                  ) : (
+                    <>
+                      <Text style={styles.sendButtonText}>Send OTP</Text>
+                      <ArrowRight size={20} color="#FFFFFF" />
+                    </>
+                  )}
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <View style={styles.form}>
+                <View style={styles.inputGroup}>
+                  <Text style={styles.label}>Enter OTP</Text>
                   <TextInput
                     style={styles.input}
-                    placeholder="10-digit mobile number"
-                    value={phone}
-                    onChangeText={(text) => setPhone(text.replace(/[^0-9]/g, ''))}
-                    keyboardType="phone-pad"
-                    maxLength={10}
+                    placeholder="123456"
+                    value={otp}
+                    onChangeText={(text) => setOtp(text.replace(/[^0-9]/g, ''))}
+                    keyboardType="number-pad"
+                    maxLength={6}
                     editable={!isLoading}
                   />
                 </View>
+
+                <TouchableOpacity
+                  style={[styles.verifyButton, isLoading && styles.verifyButtonDisabled]}
+                  onPress={handleVerifyOTP}
+                  disabled={isLoading}
+                  activeOpacity={0.8}
+                >
+                  {isLoading ? (
+                    <ActivityIndicator color="#FFFFFF" />
+                  ) : (
+                    <Text style={styles.verifyButtonText}>Verify & Login</Text>
+                  )}
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.resendButton}
+                  onPress={() => setConfirm(null)}
+                  disabled={isLoading}
+                >
+                  <Text style={styles.resendButtonText}>Change Number</Text>
+                </TouchableOpacity>
               </View>
+            )}
 
-              <TouchableOpacity
-                style={[styles.sendButton, isLoading && styles.sendButtonDisabled]}
-                onPress={handleSendOTP}
-                disabled={isLoading}
-                activeOpacity={0.8}
-              >
-                {isLoading ? (
-                  <ActivityIndicator color="#FFFFFF" />
-                ) : (
-                  <>
-                    <Text style={styles.sendButtonText}>Send OTP</Text>
-                    <ArrowRight size={20} color="#FFFFFF" />
-                  </>
-                )}
-              </TouchableOpacity>
-            </View>
-          ) : (
-            <View style={styles.form}>
-              <View style={styles.inputGroup}>
-                <Text style={styles.label}>Enter OTP</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="123456"
-                  value={otp}
-                  onChangeText={(text) => setOtp(text.replace(/[^0-9]/g, ''))}
-                  keyboardType="number-pad"
-                  maxLength={6}
-                  editable={!isLoading}
-                />
-              </View>
-
-              <TouchableOpacity
-                style={[styles.verifyButton, isLoading && styles.verifyButtonDisabled]}
-                onPress={handleVerifyOTP}
-                disabled={isLoading}
-                activeOpacity={0.8}
-              >
-                {isLoading ? (
-                  <ActivityIndicator color="#FFFFFF" />
-                ) : (
-                  <Text style={styles.verifyButtonText}>Verify & Login</Text>
-                )}
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.resendButton}
-                onPress={() => setConfirm(null)}
-                disabled={isLoading}
-              >
-                <Text style={styles.resendButtonText}>Change Number</Text>
-              </TouchableOpacity>
-            </View>
-          )}
-
-          <TouchableOpacity
-            style={styles.signupLink}
-            onPress={() => router.push('/signup')}
-          >
-            <Text style={styles.signupLinkText}>
-              New rider? <Text style={styles.signupLinkBold}>Signup here</Text>
-            </Text>
-          </TouchableOpacity>
-        </View>
-      </KeyboardAvoidingView>
+            <TouchableOpacity
+              style={styles.signupLink}
+              onPress={() => router.push('/signup')}
+            >
+              <Text style={styles.signupLinkText}>
+                New rider? <Text style={styles.signupLinkBold}>Signup here</Text>
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
 
       <AlertComponent />
     </>
@@ -318,10 +321,14 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#F9FAFB',
   },
+  keyboardView: {
+    flex: 1,
+  },
   content: {
     flex: 1,
     paddingHorizontal: 24,
-    paddingTop: 80,
+    paddingTop: 40,
+    paddingBottom: 20,
   },
   header: {
     alignItems: 'center',

@@ -1,6 +1,6 @@
 import * as FileSystem from 'expo-file-system';
 
-const API_BASE_URL = 'https://hk8atrob96.execute-api.ap-south-1.amazonaws.com/default';
+const API_BASE_URL = 'https://htgicpllf2.execute-api.ap-south-1.amazonaws.com/default';
 
 export interface APIResponse<T> {
   data?: T;

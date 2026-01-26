@@ -23,17 +23,26 @@ import { useAuth } from '@/contexts/AuthContext';
 import { OrderCard } from '@/components/OrderCard';
 import { useThemedAlert } from '@/components/ThemedAlert';
 
-type TabFilter = 'all' | 'new' | 'active' | 'completed';
+type TabFilter = 'active' | 'completed';
 
 export default function OrdersScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { rider } = useAuth();
-  const { orders, activeOrders, completedOrders, isLoading, refreshOrders, acceptOrder, rejectOrder } = useOrders();
+  const { orders, activeOrders, completedOrders, isLoading, isLoadingCompleted, refreshOrders, refreshCompletedOrders, acceptOrder, rejectOrder } = useOrders();
   const { isOnline, toggleOnline, currentLocation } = useLocation();
   const { showAlert, AlertComponent } = useThemedAlert();
-  const [selectedTab, setSelectedTab] = useState<TabFilter>('all');
+  const [selectedTab, setSelectedTab] = useState<TabFilter>('active');
   const [isTogglingOnline, setIsTogglingOnline] = useState(false);
+  const [hasLoadedCompleted, setHasLoadedCompleted] = useState(false);
+
+  // Load completed orders when user switches to Completed tab
+  React.useEffect(() => {
+    if (selectedTab === 'completed' && !hasLoadedCompleted) {
+      refreshCompletedOrders();
+      setHasLoadedCompleted(true);
+    }
+  }, [selectedTab, hasLoadedCompleted, refreshCompletedOrders]);
 
   const handleToggleOnline = async () => {
     setIsTogglingOnline(true);
@@ -49,33 +58,10 @@ export default function OrdersScreen() {
   const handleAcceptOrder = async (orderId: string) => {
     try {
       await acceptOrder(orderId);
-      showAlert('Order Accepted', 'You can now proceed to pickup', undefined, 'success');
+      showAlert('Picked Up', 'Order marked as picked up. Start delivery when ready.', undefined, 'success');
     } catch (error: any) {
-      showAlert('Error', error.message || 'Failed to accept order', undefined, 'error');
+      showAlert('Error', error.message || 'Failed to mark as picked up', undefined, 'error');
     }
-  };
-
-  const handleRejectOrder = (orderId: string) => {
-    showAlert(
-      'Reject Order',
-      'Are you sure you want to reject this order?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Reject',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await rejectOrder(orderId, 'Rider unavailable');
-              showAlert('Order Rejected', 'Order has been rejected', undefined, 'info');
-            } catch (error: any) {
-              showAlert('Error', 'Failed to reject order', undefined, 'error');
-            }
-          },
-        },
-      ],
-      'warning'
-    );
   };
 
   const handleOrderPress = (orderId: string) => {
@@ -85,14 +71,12 @@ export default function OrdersScreen() {
   // Filter orders based on selected tab
   const filteredOrders = (() => {
     switch (selectedTab) {
-      case 'new':
-        return orders.filter((o) => o.status === 'CONFIRMED');
       case 'active':
-        return activeOrders;
+        // All active orders: assigned, picked up, or out for delivery
+        return orders.filter((o) => ['RIDER_ASSIGNED', 'PICKED_UP', 'OUT_FOR_DELIVERY'].includes(o.status));
       case 'completed':
+        // Completed/delivered orders
         return completedOrders;
-      default:
-        return orders;
     }
   })();
 
@@ -124,7 +108,7 @@ export default function OrdersScreen() {
 
         {/* Tab Filters */}
         <View style={styles.tabs}>
-          {(['all', 'new', 'active', 'completed'] as TabFilter[]).map((tab) => (
+          {(['active', 'completed'] as TabFilter[]).map((tab) => (
             <TouchableOpacity
               key={tab}
               style={[styles.tab, selectedTab === tab && styles.tabActive]}
@@ -144,8 +128,8 @@ export default function OrdersScreen() {
           showsVerticalScrollIndicator={false}
           refreshControl={
             <RefreshControl
-              refreshing={isLoading}
-              onRefresh={refreshOrders}
+              refreshing={selectedTab === 'completed' ? isLoadingCompleted : isLoading}
+              onRefresh={selectedTab === 'completed' ? refreshCompletedOrders : refreshOrders}
               tintColor="#3B82F6"
               colors={['#3B82F6']}
             />
@@ -178,8 +162,7 @@ export default function OrdersScreen() {
                   key={order.orderId}
                   order={order}
                   onPress={() => handleOrderPress(order.orderId)}
-                  onAccept={order.status === 'CONFIRMED' ? () => handleAcceptOrder(order.orderId) : undefined}
-                  onReject={order.status === 'CONFIRMED' ? () => handleRejectOrder(order.orderId) : undefined}
+                  onAccept={order.status === ('RIDER_ASSIGNED' as any) ? () => handleAcceptOrder(order.orderId) : undefined}
                   riderLocation={currentLocation || undefined}
                 />
               ))}

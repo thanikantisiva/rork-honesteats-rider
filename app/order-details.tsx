@@ -10,10 +10,10 @@ import {
   View,
   ScrollView,
   TouchableOpacity,
-  TextInput,
   Linking,
   ActivityIndicator,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams, Stack } from 'expo-router';
 import { MapPin, Phone, Navigation, Package, CheckCircle } from 'lucide-react-native';
 import { useOrders } from '@/contexts/OrdersContext';
@@ -27,7 +27,6 @@ export default function OrderDetailsScreen() {
   const { orders, updateOrderStatus } = useOrders();
   const { showAlert, AlertComponent } = useThemedAlert();
   const [order, setOrder] = useState<RiderOrder | null>(null);
-  const [otp, setOtp] = useState('');
   const [isUpdating, setIsUpdating] = useState(false);
 
   useEffect(() => {
@@ -58,7 +57,7 @@ export default function OrderDetailsScreen() {
     setIsUpdating(true);
     try {
       await updateOrderStatus(order.orderId, 'OUT_FOR_DELIVERY');
-      showAlert('Picked Up', 'Order marked as picked up. Navigate to customer now.', undefined, 'success');
+      showAlert('Out for Delivery', 'Order marked as out for delivery. Navigate to customer now.', undefined, 'success');
     } catch (error: any) {
       showAlert('Error', error.message || 'Failed to update status', undefined, 'error');
     } finally {
@@ -67,14 +66,9 @@ export default function OrderDetailsScreen() {
   };
 
   const handleMarkDelivered = async () => {
-    if (!otp || otp.length !== 4) {
-      showAlert('Invalid OTP', 'Please enter the 4-digit delivery OTP', undefined, 'warning');
-      return;
-    }
-
     setIsUpdating(true);
     try {
-      await updateOrderStatus(order.orderId, 'DELIVERED', otp);
+      await updateOrderStatus(order.orderId, 'DELIVERED');
       showAlert(
         'Delivered!',
         'Order completed successfully. Great job!',
@@ -88,7 +82,7 @@ export default function OrderDetailsScreen() {
         'success'
       );
     } catch (error: any) {
-      showAlert('Error', error.message || 'Invalid OTP or failed to deliver', undefined, 'error');
+      showAlert('Error', error.message || 'Failed to deliver', undefined, 'error');
     } finally {
       setIsUpdating(false);
     }
@@ -97,7 +91,7 @@ export default function OrderDetailsScreen() {
   return (
     <>
       <Stack.Screen options={{ headerShown: true, title: 'Order Details' }} />
-      <View style={styles.container}>
+      <SafeAreaView style={styles.container} edges={['bottom']}>
         <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
           {/* Order Header */}
           <View style={styles.orderHeader}>
@@ -180,28 +174,25 @@ export default function OrderDetailsScreen() {
             </View>
           </View>
 
-          {/* OTP Section (for delivery) */}
-          {order.status === 'OUT_FOR_DELIVERY' && (
+          {/* Pickup OTP Section (show to restaurant) */}
+          {['RIDER_ASSIGNED', 'PICKED_UP'].includes(order.status as any) && order.deliveryOtp && (
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Delivery OTP</Text>
-              <View style={styles.card}>
-                <Text style={styles.otpLabel}>Ask customer for 4-digit OTP:</Text>
-                <TextInput
-                  style={styles.otpInput}
-                  placeholder="Enter OTP"
-                  value={otp}
-                  onChangeText={(text) => setOtp(text.replace(/[^0-9]/g, ''))}
-                  keyboardType="number-pad"
-                  maxLength={4}
-                />
+              <Text style={styles.sectionTitle}>Pickup OTP</Text>
+              <View style={[styles.card, styles.otpCard]}>
+                <Text style={styles.otpLabel}>Show this OTP to restaurant:</Text>
+                <View style={styles.otpDisplay}>
+                  <Text style={styles.otpDisplayText}>{order.deliveryOtp}</Text>
+                </View>
+                <Text style={styles.otpHint}>Restaurant will verify this code before handing over the order</Text>
               </View>
             </View>
           )}
+
         </ScrollView>
 
         {/* Action Footer */}
         <View style={styles.footer}>
-          {order.status === 'ACCEPTED' && (
+          {order.status === 'PICKED_UP' && (
             <TouchableOpacity
               style={[styles.primaryButton, isUpdating && styles.primaryButtonDisabled]}
               onPress={handleMarkPickedUp}
@@ -212,7 +203,7 @@ export default function OrderDetailsScreen() {
               ) : (
                 <>
                   <CheckCircle size={20} color="#FFFFFF" />
-                  <Text style={styles.primaryButtonText}>Mark as Picked Up</Text>
+                  <Text style={styles.primaryButtonText}>Start Delivery</Text>
                 </>
               )}
             </TouchableOpacity>
@@ -222,7 +213,7 @@ export default function OrderDetailsScreen() {
             <TouchableOpacity
               style={[styles.primaryButton, styles.deliverButton, isUpdating && styles.primaryButtonDisabled]}
               onPress={handleMarkDelivered}
-              disabled={isUpdating || !otp}
+              disabled={isUpdating}
             >
               {isUpdating ? (
                 <ActivityIndicator color="#FFFFFF" />
@@ -235,7 +226,7 @@ export default function OrderDetailsScreen() {
             </TouchableOpacity>
           )}
         </View>
-      </View>
+      </SafeAreaView>
 
       <AlertComponent />
     </>
@@ -361,17 +352,33 @@ const styles = StyleSheet.create({
     color: '#6B7280',
     marginBottom: 12,
   },
-  otpInput: {
-    backgroundColor: '#F9FAFB',
+  otpCard: {
+    backgroundColor: '#FEF3C7',
+    borderColor: '#F59E0B',
     borderWidth: 2,
-    borderColor: '#3B82F6',
+  },
+  otpDisplay: {
+    backgroundColor: '#FFFFFF',
     borderRadius: 12,
+    paddingVertical: 20,
     paddingHorizontal: 16,
-    paddingVertical: 16,
-    fontSize: 24,
+    alignItems: 'center',
+    marginBottom: 12,
+    borderWidth: 2,
+    borderColor: '#F59E0B',
+    borderStyle: 'dashed',
+  },
+  otpDisplayText: {
+    fontSize: 36,
     fontWeight: '700',
+    color: '#111827',
+    letterSpacing: 12,
+  },
+  otpHint: {
+    fontSize: 12,
+    color: '#92400E',
     textAlign: 'center',
-    letterSpacing: 8,
+    lineHeight: 16,
   },
   footer: {
     backgroundColor: '#FFFFFF',

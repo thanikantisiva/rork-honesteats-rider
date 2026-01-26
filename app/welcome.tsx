@@ -5,6 +5,7 @@
 
 import React from 'react';
 import { StyleSheet, Text, View, TouchableOpacity, Image } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, Stack } from 'expo-router';
 import { Bike, LogIn, UserPlus } from 'lucide-react-native';
 
@@ -14,7 +15,7 @@ export default function WelcomeScreen() {
   return (
     <>
       <Stack.Screen options={{ headerShown: false }} />
-      <View style={styles.container}>
+      <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
         <View style={styles.content}>
           {/* Logo/Icon */}
           <View style={styles.logoContainer}>
@@ -62,7 +63,7 @@ export default function WelcomeScreen() {
             <Text style={styles.loginButtonText}>Login</Text>
           </TouchableOpacity>
         </View>
-      </View>
+      </SafeAreaView>
     </>
   );
 }

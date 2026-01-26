@@ -13,7 +13,9 @@ interface OrdersContextType {
   activeOrders: RiderOrder[];
   completedOrders: RiderOrder[];
   isLoading: boolean;
+  isLoadingCompleted: boolean;
   refreshOrders: () => Promise<void>;
+  refreshCompletedOrders: () => Promise<void>;
   acceptOrder: (orderId: string) => Promise<void>;
   rejectOrder: (orderId: string, reason: string) => Promise<void>;
   updateOrderStatus: (orderId: string, status: string, otp?: string) => Promise<void>;
@@ -24,7 +26,9 @@ const OrdersContext = createContext<OrdersContextType | undefined>(undefined);
 export function OrdersProvider({ children }: { children: ReactNode }) {
   const { rider, isLoggedIn } = useAuth();
   const [orders, setOrders] = useState<RiderOrder[]>([]);
+  const [completedOrdersList, setCompletedOrdersList] = useState<RiderOrder[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [isLoadingCompleted, setIsLoadingCompleted] = useState(false);
 
   useEffect(() => {
     if (isLoggedIn && rider) {
@@ -41,9 +45,22 @@ export function OrdersProvider({ children }: { children: ReactNode }) {
 
     setIsLoading(true);
     try {
-      const response = await riderOrderAPI.getOrders(rider.riderId);
-      setOrders(response.orders);
-      console.log(`📦 Fetched ${response.orders.length} orders for rider`);
+      // Fetch only active orders (RIDER_ASSIGNED, PICKED_UP, OUT_FOR_DELIVERY)
+      // This is optimized - doesn't fetch completed orders on every refresh
+      const [riderAssignedResponse, pickedUpResponse, outForDeliveryResponse] = await Promise.all([
+        riderOrderAPI.getOrders(rider.riderId, 'RIDER_ASSIGNED'),
+        riderOrderAPI.getOrders(rider.riderId, 'PICKED_UP'),
+        riderOrderAPI.getOrders(rider.riderId, 'OUT_FOR_DELIVERY')
+      ]);
+      
+      const allActiveOrders = [
+        ...riderAssignedResponse.orders,
+        ...pickedUpResponse.orders,
+        ...outForDeliveryResponse.orders
+      ];
+      
+      setOrders(allActiveOrders);
+      console.log(`📦 Fetched ${allActiveOrders.length} active orders for rider`);
     } catch (error) {
       console.error('Failed to fetch orders:', error);
     } finally {
@@ -83,6 +100,10 @@ export function OrdersProvider({ children }: { children: ReactNode }) {
     try {
       await riderOrderAPI.updateOrderStatus(rider.riderId, orderId, status, otp);
       await refreshOrders();
+      // If marking as delivered, also refresh completed orders
+      if (status === 'DELIVERED') {
+        await refreshCompletedOrders();
+      }
       console.log(`📝 Order ${orderId} status updated to ${status}`);
     } catch (error) {
       console.error('Failed to update order status:', error);
@@ -90,11 +111,26 @@ export function OrdersProvider({ children }: { children: ReactNode }) {
     }
   }, [rider, refreshOrders]);
 
+  const refreshCompletedOrders = useCallback(async () => {
+    if (!rider) return;
+
+    setIsLoadingCompleted(true);
+    try {
+      const response = await riderOrderAPI.getOrders(rider.riderId, 'DELIVERED');
+      setCompletedOrdersList(response.orders);
+      console.log(`✅ Fetched ${response.orders.length} completed orders for rider`);
+    } catch (error) {
+      console.error('Failed to fetch completed orders:', error);
+    } finally {
+      setIsLoadingCompleted(false);
+    }
+  }, [rider]);
+
   const activeOrders = orders.filter(
-    (o) => ['CONFIRMED', 'ACCEPTED', 'OUT_FOR_DELIVERY'].includes(o.status)
+    (o) => ['RIDER_ASSIGNED', 'PICKED_UP', 'OUT_FOR_DELIVERY'].includes(o.status)
   );
 
-  const completedOrders = orders.filter((o) => o.status === 'DELIVERED');
+  const completedOrders = completedOrdersList;
 
   return (
     <OrdersContext.Provider
@@ -103,7 +139,9 @@ export function OrdersProvider({ children }: { children: ReactNode }) {
         activeOrders,
         completedOrders,
         isLoading,
+        isLoadingCompleted,
         refreshOrders,
+        refreshCompletedOrders,
         acceptOrder,
         rejectOrder,
         updateOrderStatus,

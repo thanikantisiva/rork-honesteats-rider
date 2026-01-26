@@ -5,6 +5,7 @@
 
 import React, { useState } from 'react';
 import { StyleSheet, Text, View, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, Stack } from 'expo-router';
 import { Clock, RefreshCw, Phone } from 'lucide-react-native';
 import { useThemedAlert } from '@/components/ThemedAlert';
@@ -73,7 +74,7 @@ export default function VerificationPendingScreen() {
   return (
     <>
       <Stack.Screen options={{ headerShown: false }} />
-      <View style={styles.container}>
+      <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
         <View style={styles.content}>
           {/* Icon */}
           <View style={styles.iconContainer}>
@@ -140,7 +141,7 @@ export default function VerificationPendingScreen() {
             <Text style={styles.supportButtonText}>Need Help?</Text>
           </TouchableOpacity>
         </View>
-      </View>
+      </SafeAreaView>
 
       <AlertComponent />
     </>

@@ -98,16 +98,16 @@ export default function EarningsScreen() {
                   <IndianRupee size={32} color="#10B981" />
                   <Text style={styles.summaryTitle}>Total Earnings</Text>
                 </View>
-                <Text style={styles.summaryAmount}>₹{earnings.totalEarnings.toFixed(2)}</Text>
+                <Text style={styles.summaryAmount}>₹{(earnings.totalEarnings || 0).toFixed(2)}</Text>
                 <View style={styles.summaryStats}>
                   <View style={styles.stat}>
                     <Package size={18} color="#6B7280" />
-                    <Text style={styles.statValue}>{earnings.totalDeliveries}</Text>
+                    <Text style={styles.statValue}>{earnings.totalDeliveries || 0}</Text>
                     <Text style={styles.statLabel}>Deliveries</Text>
                   </View>
                   <View style={styles.stat}>
                     <TrendingUp size={18} color="#6B7280" />
-                    <Text style={styles.statValue}>₹{earnings.totalTips.toFixed(0)}</Text>
+                    <Text style={styles.statValue}>₹{(earnings.totalTips || 0).toFixed(0)}</Text>
                     <Text style={styles.statLabel}>Tips</Text>
                   </View>
                 </View>
@@ -121,10 +121,10 @@ export default function EarningsScreen() {
                     <View key={index} style={styles.dayCard}>
                       <View style={styles.dayHeader}>
                         <Text style={styles.dayDate}>{day.date}</Text>
-                        <Text style={styles.dayAmount}>₹{day.totalEarnings.toFixed(2)}</Text>
+                        <Text style={styles.dayAmount}>₹{(day.totalEarnings || 0).toFixed(2)}</Text>
                       </View>
                       <Text style={styles.dayStats}>
-                        {day.totalDeliveries} deliveries • {day.onlineTimeMinutes} min online
+                        {day.totalDeliveries || 0} deliveries • {day.onlineTimeMinutes || 0} min online
                       </Text>
                     </View>
                   ))}

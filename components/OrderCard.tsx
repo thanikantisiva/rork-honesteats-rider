@@ -19,8 +19,8 @@ interface OrderCardProps {
 }
 
 export function OrderCard({ order, onPress, onAccept, onReject, riderLocation }: OrderCardProps) {
-  const isNewOrder = order.status === 'CONFIRMED';
-  const isActive = ['ACCEPTED', 'OUT_FOR_DELIVERY'].includes(order.status);
+  const isNewOrder = order.status === 'RIDER_ASSIGNED';
+  const isActive = ['PICKED_UP', 'OUT_FOR_DELIVERY'].includes(order.status);
 
   // Calculate distance to pickup
   let distanceToPickup: number | undefined;
@@ -41,7 +41,7 @@ export function OrderCard({ order, onPress, onAccept, onReject, riderLocation }:
     >
       {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.orderId}>#{order.orderId.slice(0, 8)}</Text>
+        <Text style={styles.orderId}>#{order.orderId}</Text>
         <StatusBadge status={order.status} />
       </View>
 
@@ -88,30 +88,26 @@ export function OrderCard({ order, onPress, onAccept, onReject, riderLocation }:
         </View>
       </View>
 
-      {/* Action Buttons for New Orders */}
-      {isNewOrder && onAccept && onReject && (
-        <View style={styles.actions}>
-          <TouchableOpacity
-            style={styles.rejectButton}
-            onPress={(e) => {
-              e.stopPropagation();
-              onReject();
-            }}
-            activeOpacity={0.8}
-          >
-            <Text style={styles.rejectButtonText}>Reject</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.acceptButton}
-            onPress={(e) => {
-              e.stopPropagation();
-              onAccept();
-            }}
-            activeOpacity={0.8}
-          >
-            <Text style={styles.acceptButtonText}>Accept</Text>
-          </TouchableOpacity>
+      {/* Pickup OTP for RIDER_ASSIGNED orders */}
+      {order.status === 'RIDER_ASSIGNED' && order.deliveryOtp && (
+        <View style={styles.otpBadge}>
+          <Text style={styles.otpLabel}>Pickup OTP:</Text>
+          <Text style={styles.otpText}>{order.deliveryOtp}</Text>
         </View>
+      )}
+
+      {/* Action Button for New Orders */}
+      {isNewOrder && onAccept && (
+        <TouchableOpacity
+          style={styles.pickedUpButton}
+          onPress={(e) => {
+            e.stopPropagation();
+            onAccept();
+          }}
+          activeOpacity={0.8}
+        >
+          <Text style={styles.pickedUpButtonText}>PICKED UP</Text>
+        </TouchableOpacity>
       )}
     </TouchableOpacity>
   );
@@ -204,35 +200,41 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#10B981',
   },
-  actions: {
+  otpBadge: {
+    backgroundColor: '#FEF3C7',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
     flexDirection: 'row',
-    gap: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#F59E0B',
+  },
+  otpLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#92400E',
+  },
+  otpText: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#92400E',
+    letterSpacing: 4,
+  },
+  pickedUpButton: {
+    backgroundColor: '#10B981',
+    paddingVertical: 14,
+    borderRadius: 10,
+    alignItems: 'center',
     marginTop: 4,
   },
-  rejectButton: {
-    flex: 1,
-    backgroundColor: '#FFFFFF',
-    paddingVertical: 12,
-    borderRadius: 10,
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: '#EF4444',
-  },
-  rejectButtonText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#EF4444',
-  },
-  acceptButton: {
-    flex: 1,
-    backgroundColor: '#10B981',
-    paddingVertical: 12,
-    borderRadius: 10,
-    alignItems: 'center',
-  },
-  acceptButtonText: {
-    fontSize: 14,
+  pickedUpButtonText: {
+    fontSize: 15,
     fontWeight: '700',
     color: '#FFFFFF',
+    letterSpacing: 1,
   },
 });
