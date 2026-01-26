@@ -21,6 +21,7 @@ interface OrderCardProps {
 export function OrderCard({ order, onPress, onAccept, onReject, riderLocation }: OrderCardProps) {
   const isNewOrder = order.status === 'RIDER_ASSIGNED';
   const isActive = ['PICKED_UP', 'OUT_FOR_DELIVERY'].includes(order.status);
+  const isCompleted = order.status === 'DELIVERED';
 
   // Calculate distance to pickup
   let distanceToPickup: number | undefined;
@@ -35,9 +36,13 @@ export function OrderCard({ order, onPress, onAccept, onReject, riderLocation }:
 
   return (
     <TouchableOpacity
-      style={[styles.card, isNewOrder && styles.cardNew]}
-      onPress={onPress}
-      activeOpacity={0.7}
+      style={[
+        styles.card, 
+        isNewOrder && styles.cardNew
+      ]}
+      onPress={isCompleted ? undefined : onPress}
+      disabled={isCompleted}
+      activeOpacity={isCompleted ? 1 : 0.7}
     >
       {/* Header */}
       <View style={styles.header}>
