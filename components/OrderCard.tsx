@@ -3,9 +3,9 @@
  * Displays order summary in list view
  */
 
-import React from 'react';
-import { StyleSheet, Text, View, TouchableOpacity } from 'react-native';
-import { MapPin, Home, Package, IndianRupee, Navigation } from 'lucide-react-native';
+import React, { useState } from 'react';
+import { StyleSheet, Text, View, TouchableOpacity, TextInput, Alert } from 'react-native';
+import { MapPin, Home, Package, IndianRupee, Navigation, CheckCircle, Truck, Lock } from 'lucide-react-native';
 import { RiderOrder } from '@/types';
 import { StatusBadge } from './StatusBadge';
 import { formatDistance, calculateDistance } from '@/utils/distance';
@@ -15,13 +15,21 @@ interface OrderCardProps {
   onPress: () => void;
   onAccept?: () => void;
   onReject?: () => void;
+  onStartDelivery?: () => void;
+  onMarkDelivered?: () => void;
   riderLocation?: { lat: number; lng: number };
 }
 
-export function OrderCard({ order, onPress, onAccept, onReject, riderLocation }: OrderCardProps) {
+export function OrderCard({ order, onPress, onAccept, onReject, onStartDelivery, onMarkDelivered, riderLocation }: OrderCardProps) {
   const isNewOrder = order.status === 'RIDER_ASSIGNED';
+  const isPickedUp = order.status === 'PICKED_UP';
+  const isOutForDelivery = order.status === 'OUT_FOR_DELIVERY';
   const isActive = ['PICKED_UP', 'OUT_FOR_DELIVERY'].includes(order.status);
   const isCompleted = order.status === 'DELIVERED';
+
+  // State for OTP verification (for delivery)
+  const [enteredOtp, setEnteredOtp] = useState('');
+  const [isOtpVerified, setIsOtpVerified] = useState(false);
 
   // Calculate distance to pickup
   let distanceToPickup: number | undefined;
@@ -34,11 +42,39 @@ export function OrderCard({ order, onPress, onAccept, onReject, riderLocation }:
     );
   }
 
+  // Auto-verify OTP when 4 digits entered
+  const handleOtpChange = (text: string) => {
+    setEnteredOtp(text);
+    
+    // Auto-verify when 4 digits entered
+    if (text.length === 4 && order.deliveryOtp) {
+      if (text === order.deliveryOtp) {
+        setIsOtpVerified(true);
+        Alert.alert('✓ Verified', 'OTP correct! You can now mark as delivered.');
+      } else {
+        Alert.alert('✗ Wrong OTP', 'Incorrect OTP. Please try again.');
+        setTimeout(() => setEnteredOtp(''), 500);
+      }
+    }
+  };
+
+  const handleMarkDeliveredWithOtp = () => {
+    if (!isOtpVerified) {
+      Alert.alert('OTP Required', 'Please enter customer\'s OTP first.');
+      return;
+    }
+    if (onMarkDelivered) {
+      onMarkDelivered();
+    }
+  };
+
   return (
     <TouchableOpacity
       style={[
         styles.card, 
-        isNewOrder && styles.cardNew
+        isNewOrder && styles.cardNew,
+        isPickedUp && styles.cardPickedUp,
+        isOutForDelivery && styles.cardOutForDelivery
       ]}
       onPress={isCompleted ? undefined : onPress}
       disabled={isCompleted}
@@ -93,15 +129,40 @@ export function OrderCard({ order, onPress, onAccept, onReject, riderLocation }:
         </View>
       </View>
 
-      {/* Pickup OTP for RIDER_ASSIGNED orders */}
-      {order.status === 'RIDER_ASSIGNED' && order.deliveryOtp && (
-        <View style={styles.otpBadge}>
-          <Text style={styles.otpLabel}>Pickup OTP:</Text>
+      {/* Pickup OTP Display - For RIDER_ASSIGNED and PICKED_UP */}
+      {['RIDER_ASSIGNED', 'PICKED_UP'].includes(order.status) && order.deliveryOtp && (
+        <View style={styles.pickupOtpBadge}>
+          <Lock size={14} color="#92400E" />
+          <Text style={styles.otpLabel}>Pickup OTP (Show to Restaurant):</Text>
           <Text style={styles.otpText}>{order.deliveryOtp}</Text>
         </View>
       )}
 
-      {/* Action Button for New Orders */}
+      {/* Delivery OTP Verification - For OUT_FOR_DELIVERY */}
+      {isOutForDelivery && order.deliveryOtp && !isOtpVerified && (
+        <View style={styles.otpInputSection}>
+          <Text style={styles.otpInputLabel}>Ask customer for OTP:</Text>
+          <TextInput
+            style={styles.otpInputSimple}
+            value={enteredOtp}
+            onChangeText={handleOtpChange}
+            placeholder="Enter 4-digit OTP"
+            placeholderTextColor="#9CA3AF"
+            keyboardType="number-pad"
+            maxLength={4}
+            autoFocus={false}
+          />
+        </View>
+      )}
+
+      {isOutForDelivery && isOtpVerified && (
+        <View style={styles.otpVerifiedSection}>
+          <CheckCircle size={20} color="#10B981" />
+          <Text style={styles.otpVerifiedSimple}>OTP Verified ✓</Text>
+        </View>
+      )}
+
+      {/* Action Buttons */}
       {isNewOrder && onAccept && (
         <TouchableOpacity
           style={styles.pickedUpButton}
@@ -111,7 +172,42 @@ export function OrderCard({ order, onPress, onAccept, onReject, riderLocation }:
           }}
           activeOpacity={0.8}
         >
+          <CheckCircle size={18} color="#FFFFFF" />
           <Text style={styles.pickedUpButtonText}>PICKED UP</Text>
+        </TouchableOpacity>
+      )}
+
+      {isPickedUp && onStartDelivery && (
+        <TouchableOpacity
+          style={styles.startDeliveryButton}
+          onPress={(e) => {
+            e.stopPropagation();
+            onStartDelivery();
+          }}
+          activeOpacity={0.8}
+        >
+          <Truck size={18} color="#FFFFFF" />
+          <Text style={styles.startDeliveryButtonText}>START DELIVERY</Text>
+        </TouchableOpacity>
+      )}
+
+      {isOutForDelivery && onMarkDelivered && (
+        <TouchableOpacity
+          style={[
+            styles.markDeliveredButton,
+            !isOtpVerified && styles.markDeliveredButtonDisabled
+          ]}
+          onPress={(e) => {
+            e.stopPropagation();
+            handleMarkDeliveredWithOtp();
+          }}
+          disabled={!isOtpVerified}
+          activeOpacity={0.8}
+        >
+          <CheckCircle size={18} color="#FFFFFF" />
+          <Text style={styles.markDeliveredButtonText}>
+            {isOtpVerified ? 'MARK AS DELIVERED' : 'VERIFY OTP FIRST'}
+          </Text>
         </TouchableOpacity>
       )}
     </TouchableOpacity>
@@ -131,6 +227,16 @@ const styles = StyleSheet.create({
     borderColor: '#3B82F6',
     borderWidth: 2,
     backgroundColor: '#EFF6FF',
+  },
+  cardPickedUp: {
+    borderColor: '#10B981',
+    borderWidth: 2,
+    backgroundColor: '#F0FDF4',
+  },
+  cardOutForDelivery: {
+    borderColor: '#F59E0B',
+    borderWidth: 2,
+    backgroundColor: '#FFFBEB',
   },
   header: {
     flexDirection: 'row',
@@ -205,11 +311,11 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#10B981',
   },
-  otpBadge: {
+  pickupOtpBadge: {
     backgroundColor: '#FEF3C7',
     borderRadius: 8,
     paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingVertical: 10,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -219,7 +325,7 @@ const styles = StyleSheet.create({
     borderColor: '#F59E0B',
   },
   otpLabel: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '600',
     color: '#92400E',
   },
@@ -229,14 +335,91 @@ const styles = StyleSheet.create({
     color: '#92400E',
     letterSpacing: 4,
   },
+  otpInputSection: {
+    marginBottom: 12,
+  },
+  otpInputLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#6B7280',
+    marginBottom: 8,
+  },
+  otpInputSimple: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 2,
+    borderColor: '#E5E7EB',
+    borderRadius: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    fontSize: 24,
+    fontWeight: '700',
+    textAlign: 'center',
+    letterSpacing: 8,
+    color: '#111827',
+  },
+  otpVerifiedSection: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#D1FAE5',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    marginBottom: 12,
+  },
+  otpVerifiedSimple: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#10B981',
+  },
   pickedUpButton: {
     backgroundColor: '#10B981',
     paddingVertical: 14,
     borderRadius: 10,
     alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 8,
     marginTop: 4,
   },
   pickedUpButtonText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    letterSpacing: 1,
+  },
+  startDeliveryButton: {
+    backgroundColor: '#3B82F6',
+    paddingVertical: 14,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 4,
+  },
+  startDeliveryButtonText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    letterSpacing: 1,
+  },
+  markDeliveredButton: {
+    backgroundColor: '#10B981',
+    paddingVertical: 14,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 4,
+  },
+  markDeliveredButtonDisabled: {
+    backgroundColor: '#9CA3AF',
+    opacity: 0.6,
+  },
+  markDeliveredButtonText: {
     fontSize: 15,
     fontWeight: '700',
     color: '#FFFFFF',

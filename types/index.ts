@@ -53,6 +53,7 @@ export type OrderStatus =
   | 'ACCEPTED'
   | 'PREPARING'
   | 'READY'
+  | 'AWAITING_RIDER_ASSIGNMENT'
   | 'RIDER_ASSIGNED'
   | 'PICKED_UP'
   | 'OUT_FOR_DELIVERY'

@@ -15,7 +15,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams, Stack } from 'expo-router';
-import { MapPin, Phone, Navigation, Package, CheckCircle } from 'lucide-react-native';
+import { MapPin, Phone, Navigation, Package } from 'lucide-react-native';
 import { useOrders } from '@/contexts/OrdersContext';
 import { StatusBadge } from '@/components/StatusBadge';
 import { useThemedAlert } from '@/components/ThemedAlert';
@@ -24,10 +24,9 @@ import { RiderOrder } from '@/types';
 export default function OrderDetailsScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
-  const { orders, updateOrderStatus } = useOrders();
+  const { orders } = useOrders();
   const { showAlert, AlertComponent } = useThemedAlert();
   const [order, setOrder] = useState<RiderOrder | null>(null);
-  const [isUpdating, setIsUpdating] = useState(false);
 
   useEffect(() => {
     const foundOrder = orders.find((o) => o.orderId === params.id);
@@ -53,40 +52,6 @@ export default function OrderDetailsScreen() {
     Linking.openURL(url);
   };
 
-  const handleMarkPickedUp = async () => {
-    setIsUpdating(true);
-    try {
-      await updateOrderStatus(order.orderId, 'OUT_FOR_DELIVERY');
-      showAlert('Out for Delivery', 'Order marked as out for delivery. Navigate to customer now.', undefined, 'success');
-    } catch (error: any) {
-      showAlert('Error', error.message || 'Failed to update status', undefined, 'error');
-    } finally {
-      setIsUpdating(false);
-    }
-  };
-
-  const handleMarkDelivered = async () => {
-    setIsUpdating(true);
-    try {
-      await updateOrderStatus(order.orderId, 'DELIVERED');
-      showAlert(
-        'Delivered!',
-        'Order completed successfully. Great job!',
-        [
-          {
-            text: 'OK',
-            style: 'default',
-            onPress: () => router.back(),
-          },
-        ],
-        'success'
-      );
-    } catch (error: any) {
-      showAlert('Error', error.message || 'Failed to deliver', undefined, 'error');
-    } finally {
-      setIsUpdating(false);
-    }
-  };
 
   return (
     <>
@@ -174,58 +139,16 @@ export default function OrderDetailsScreen() {
             </View>
           </View>
 
-          {/* Pickup OTP Section (show to restaurant) */}
-          {['RIDER_ASSIGNED', 'PICKED_UP'].includes(order.status as any) && order.deliveryOtp && (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Pickup OTP</Text>
-              <View style={[styles.card, styles.otpCard]}>
-                <Text style={styles.otpLabel}>Show this OTP to restaurant:</Text>
-                <View style={styles.otpDisplay}>
-                  <Text style={styles.otpDisplayText}>{order.deliveryOtp}</Text>
-                </View>
-                <Text style={styles.otpHint}>Restaurant will verify this code before handing over the order</Text>
-              </View>
+          {/* Info Note */}
+          <View style={styles.section}>
+            <View style={styles.infoNote}>
+              <Text style={styles.infoNoteText}>
+                💡 All order actions (Picked Up, Start Delivery, Mark Delivered) are available on the order card in the orders list. This screen provides detailed information for navigation and contacting the customer or restaurant.
+              </Text>
             </View>
-          )}
+          </View>
 
         </ScrollView>
-
-        {/* Action Footer */}
-        <View style={styles.footer}>
-          {order.status === 'PICKED_UP' && (
-            <TouchableOpacity
-              style={[styles.primaryButton, isUpdating && styles.primaryButtonDisabled]}
-              onPress={handleMarkPickedUp}
-              disabled={isUpdating}
-            >
-              {isUpdating ? (
-                <ActivityIndicator color="#FFFFFF" />
-              ) : (
-                <>
-                  <CheckCircle size={20} color="#FFFFFF" />
-                  <Text style={styles.primaryButtonText}>Start Delivery</Text>
-                </>
-              )}
-            </TouchableOpacity>
-          )}
-
-          {order.status === 'OUT_FOR_DELIVERY' && (
-            <TouchableOpacity
-              style={[styles.primaryButton, styles.deliverButton, isUpdating && styles.primaryButtonDisabled]}
-              onPress={handleMarkDelivered}
-              disabled={isUpdating}
-            >
-              {isUpdating ? (
-                <ActivityIndicator color="#FFFFFF" />
-              ) : (
-                <>
-                  <CheckCircle size={20} color="#FFFFFF" />
-                  <Text style={styles.primaryButtonText}>Mark as Delivered</Text>
-                </>
-              )}
-            </TouchableOpacity>
-          )}
-        </View>
       </SafeAreaView>
 
       <AlertComponent />
@@ -347,63 +270,17 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#10B981',
   },
-  otpLabel: {
-    fontSize: 14,
-    color: '#6B7280',
-    marginBottom: 12,
-  },
-  otpCard: {
-    backgroundColor: '#FEF3C7',
-    borderColor: '#F59E0B',
-    borderWidth: 2,
-  },
-  otpDisplay: {
-    backgroundColor: '#FFFFFF',
+  infoNote: {
+    backgroundColor: '#EFF6FF',
     borderRadius: 12,
-    paddingVertical: 20,
-    paddingHorizontal: 16,
-    alignItems: 'center',
-    marginBottom: 12,
-    borderWidth: 2,
-    borderColor: '#F59E0B',
-    borderStyle: 'dashed',
-  },
-  otpDisplayText: {
-    fontSize: 36,
-    fontWeight: '700',
-    color: '#111827',
-    letterSpacing: 12,
-  },
-  otpHint: {
-    fontSize: 12,
-    color: '#92400E',
-    textAlign: 'center',
-    lineHeight: 16,
-  },
-  footer: {
-    backgroundColor: '#FFFFFF',
     padding: 16,
-    borderTopWidth: 1,
-    borderTopColor: '#E5E7EB',
+    borderWidth: 1,
+    borderColor: '#3B82F6',
   },
-  primaryButton: {
-    backgroundColor: '#3B82F6',
-    paddingVertical: 16,
-    borderRadius: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-  },
-  deliverButton: {
-    backgroundColor: '#10B981',
-  },
-  primaryButtonDisabled: {
-    opacity: 0.6,
-  },
-  primaryButtonText: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#FFFFFF',
+  infoNoteText: {
+    fontSize: 13,
+    color: '#1E40AF',
+    lineHeight: 20,
+    textAlign: 'center',
   },
 });

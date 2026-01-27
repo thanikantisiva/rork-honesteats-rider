@@ -13,6 +13,7 @@ import {
   Switch,
   RefreshControl,
   ActivityIndicator,
+  Linking,
 } from 'react-native';
 import { useRouter, Stack } from 'expo-router';
 import { Package, MapPin } from 'lucide-react-native';
@@ -29,7 +30,7 @@ export default function OrdersScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { rider } = useAuth();
-  const { orders, activeOrders, completedOrders, isLoading, isLoadingCompleted, refreshOrders, refreshCompletedOrders, acceptOrder, rejectOrder } = useOrders();
+  const { orders, activeOrders, completedOrders, isLoading, isLoadingCompleted, refreshOrders, refreshCompletedOrders, acceptOrder, rejectOrder, updateOrderStatus } = useOrders();
   const { isOnline, toggleOnline, currentLocation } = useLocation();
   const { showAlert, AlertComponent } = useThemedAlert();
   const [selectedTab, setSelectedTab] = useState<TabFilter>('active');
@@ -45,11 +46,38 @@ export default function OrdersScreen() {
   }, [selectedTab, hasLoadedCompleted, refreshCompletedOrders]);
 
   const handleToggleOnline = async () => {
+    const targetStatus = !isOnline; // Determine what we're switching to
+    
+    // Prevent going offline if there are active orders
+    if (!targetStatus && activeOrders.length > 0) {
+      showAlert(
+        'Cannot Go Offline',
+        `You have ${activeOrders.length} active order${activeOrders.length > 1 ? 's' : ''}. Please complete all deliveries before going offline.`,
+        undefined,
+        'warning'
+      );
+      return;
+    }
+    
     setIsTogglingOnline(true);
     try {
       await toggleOnline();
+      // Success feedback
+      showAlert(
+        targetStatus ? 'You\'re Online!' : 'You\'re Offline',
+        targetStatus 
+          ? 'You will now receive order assignments' 
+          : 'You won\'t receive new orders',
+        undefined,
+        targetStatus ? 'success' : 'info'
+      );
     } catch (error: any) {
-      showAlert('Error', 'Failed to update status. Please try again.', undefined, 'error');
+      showAlert(
+        'Error', 
+        `Failed to go ${targetStatus ? 'online' : 'offline'}. Please check your location permissions and try again.`, 
+        undefined, 
+        'error'
+      );
     } finally {
       setIsTogglingOnline(false);
     }
@@ -58,9 +86,42 @@ export default function OrdersScreen() {
   const handleAcceptOrder = async (orderId: string) => {
     try {
       await acceptOrder(orderId);
-      showAlert('Picked Up', 'Order marked as picked up. Start delivery when ready.', undefined, 'success');
+      showAlert('Picked Up', 'Order marked as picked up. Now start delivery to customer.', undefined, 'success');
     } catch (error: any) {
       showAlert('Error', error.message || 'Failed to mark as picked up', undefined, 'error');
+    }
+  };
+
+  const handleStartDelivery = async (orderId: string) => {
+    try {
+      // Find the order to get delivery coordinates
+      const order = orders.find(o => o.orderId === orderId);
+      
+      await updateOrderStatus(orderId, 'OUT_FOR_DELIVERY');
+      
+      // Automatically open Google Maps to delivery location
+      if (order?.deliveryLat && order?.deliveryLng) {
+        const mapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${order.deliveryLat},${order.deliveryLng}&travelmode=driving`;
+        
+        setTimeout(() => {
+          Linking.openURL(mapsUrl).catch(err => {
+            console.error('Failed to open Google Maps:', err);
+          });
+        }, 500); // Small delay to allow alert to show
+      }
+      
+      showAlert('Out for Delivery', 'Opening navigation to customer location...', undefined, 'success');
+    } catch (error: any) {
+      showAlert('Error', error.message || 'Failed to start delivery', undefined, 'error');
+    }
+  };
+
+  const handleMarkDelivered = async (orderId: string) => {
+    try {
+      await updateOrderStatus(orderId, 'DELIVERED');
+      showAlert('Delivered!', 'Order completed successfully. Great job!', undefined, 'success');
+    } catch (error: any) {
+      showAlert('Error', error.message || 'Failed to mark as delivered', undefined, 'error');
     }
   };
 
@@ -86,14 +147,24 @@ export default function OrdersScreen() {
       <View style={styles.container}>
         {/* Header */}
         <View style={[styles.header, { paddingTop: insets.top + 16 }]}>
-          <View>
+          <View style={styles.headerLeft}>
             <Text style={styles.greeting}>Hello, {rider?.name.split(' ')[0]}</Text>
             <Text style={styles.subGreeting}>
-              {isOnline ? 'You are online' : 'You are offline'}
+              {isTogglingOnline 
+                ? (isOnline ? 'Going offline...' : 'Going online...')
+                : (isOnline 
+                    ? (activeOrders.length > 0 
+                        ? `${activeOrders.length} active order${activeOrders.length > 1 ? 's' : ''}`
+                        : 'You are online')
+                    : 'You are offline')
+              }
             </Text>
           </View>
           <View style={styles.onlineToggle}>
-            <Text style={[styles.toggleLabel, isOnline && styles.toggleLabelActive]}>
+            {isTogglingOnline && (
+              <ActivityIndicator size="small" color={isOnline ? '#EF4444' : '#10B981'} style={styles.toggleLoader} />
+            )}
+            <Text style={[styles.toggleLabel, isOnline && styles.toggleLabelActive, isTogglingOnline && styles.toggleLabelDisabled]}>
               {isOnline ? 'Online' : 'Offline'}
             </Text>
             <Switch
@@ -150,8 +221,20 @@ export default function OrdersScreen() {
                   : 'Go online to start receiving orders'}
               </Text>
               {!isOnline && (
-                <TouchableOpacity style={styles.goOnlineButton} onPress={handleToggleOnline}>
-                  <Text style={styles.goOnlineButtonText}>Go Online</Text>
+                <TouchableOpacity 
+                  style={[styles.goOnlineButton, isTogglingOnline && styles.goOnlineButtonDisabled]} 
+                  onPress={handleToggleOnline}
+                  disabled={isTogglingOnline}
+                  activeOpacity={0.8}
+                >
+                  {isTogglingOnline ? (
+                    <>
+                      <ActivityIndicator size="small" color="#FFFFFF" />
+                      <Text style={styles.goOnlineButtonText}>Going Online...</Text>
+                    </>
+                  ) : (
+                    <Text style={styles.goOnlineButtonText}>Go Online</Text>
+                  )}
                 </TouchableOpacity>
               )}
             </View>
@@ -162,7 +245,9 @@ export default function OrdersScreen() {
                   key={order.orderId}
                   order={order}
                   onPress={() => handleOrderPress(order.orderId)}
-                  onAccept={order.status === ('RIDER_ASSIGNED' as any) ? () => handleAcceptOrder(order.orderId) : undefined}
+                  onAccept={order.status === 'RIDER_ASSIGNED' ? () => handleAcceptOrder(order.orderId) : undefined}
+                  onStartDelivery={order.status === 'PICKED_UP' ? () => handleStartDelivery(order.orderId) : undefined}
+                  onMarkDelivered={order.status === 'OUT_FOR_DELIVERY' ? () => handleMarkDelivered(order.orderId) : undefined}
                   riderLocation={currentLocation || undefined}
                 />
               ))}
@@ -191,6 +276,9 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#E5E7EB',
   },
+  headerLeft: {
+    flex: 1,
+  },
   greeting: {
     fontSize: 24,
     fontWeight: '700',
@@ -206,6 +294,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
   },
+  toggleLoader: {
+    marginRight: 4,
+  },
   toggleLabel: {
     fontSize: 14,
     fontWeight: '600',
@@ -213,6 +304,9 @@ const styles = StyleSheet.create({
   },
   toggleLabelActive: {
     color: '#10B981',
+  },
+  toggleLabelDisabled: {
+    opacity: 0.5,
   },
   tabs: {
     flexDirection: 'row',
@@ -274,10 +368,17 @@ const styles = StyleSheet.create({
   },
   goOnlineButton: {
     backgroundColor: '#10B981',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
     paddingHorizontal: 24,
     paddingVertical: 12,
     borderRadius: 12,
     marginTop: 20,
+  },
+  goOnlineButtonDisabled: {
+    opacity: 0.7,
   },
   goOnlineButtonText: {
     fontSize: 14,

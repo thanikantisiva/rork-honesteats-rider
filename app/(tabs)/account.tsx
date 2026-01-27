@@ -9,15 +9,30 @@ import { useRouter, Stack } from 'expo-router';
 import { User, Phone, MapPin, FileText, HelpCircle, LogOut, ChevronRight } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '@/contexts/AuthContext';
+import { useLocation } from '@/contexts/LocationContext';
+import { useOrders } from '@/contexts/OrdersContext';
 import { useThemedAlert } from '@/components/ThemedAlert';
 
 export default function AccountScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { rider, logout } = useAuth();
+  const { goOffline } = useLocation();
+  const { activeOrders } = useOrders();
   const { showAlert, AlertComponent } = useThemedAlert();
 
   const handleLogout = () => {
+    // Prevent logout if there are active orders
+    if (activeOrders.length > 0) {
+      showAlert(
+        'Cannot Logout',
+        `You have ${activeOrders.length} active order${activeOrders.length > 1 ? 's' : ''}. Please complete all deliveries before logging out.`,
+        undefined,
+        'warning'
+      );
+      return;
+    }
+
     showAlert(
       'Logout',
       'Are you sure you want to logout?',
@@ -27,7 +42,8 @@ export default function AccountScreen() {
           text: 'Logout',
           style: 'destructive',
           onPress: async () => {
-            await logout();
+            // Pass goOffline callback to set rider offline with final location
+            await logout(goOffline);
             router.replace('/welcome');
           },
         },

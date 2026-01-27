@@ -6,6 +6,8 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import auth from '@react-native-firebase/auth';
+import { AppState } from 'react-native';
+import { riderStatusAPI } from '@/lib/api';
 
 interface Rider {
   riderId: string;
@@ -18,7 +20,7 @@ interface AuthContextType {
   isLoading: boolean;
   isLoggedIn: boolean;
   login: (rider: Rider) => Promise<void>;
-  logout: () => Promise<void>;
+  logout: (goOfflineCallback?: () => Promise<void>) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -31,6 +33,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     loadRiderSession();
   }, []);
+
+  // NOTE: App state changes (background/foreground) are NO LONGER automatically setting rider offline
+  // Rider stays online even when app is backgrounded - only explicit toggle or logout sets offline
+  // This prevents the rapid online/offline toggling issue
 
   const loadRiderSession = async () => {
     try {
@@ -59,16 +65,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setIsLoggedIn(true);
   };
 
-  const logout = async () => {
+  const logout = async (goOfflineCallback?: () => Promise<void>) => {
+    // Call goOffline from LocationContext if provided (sets rider offline with final location)
+    if (goOfflineCallback) {
+      try {
+        console.log('🔄 Setting rider offline on logout');
+        await goOfflineCallback();
+      } catch (error) {
+        console.error('Failed to set rider offline on logout:', error);
+      }
+    }
+
     await AsyncStorage.multiRemove([
       '@rider_logged_in',
       '@rider_id',
       '@rider_phone',
       '@rider_name',
     ]);
-    await auth().signOut();
+    
+    // Sign out from Firebase (only if user is signed in)
+    try {
+      const currentUser = auth().currentUser;
+      if (currentUser) {
+        await auth().signOut();
+        console.log('🔓 Signed out from Firebase');
+      }
+    } catch (error) {
+      console.error('Firebase sign out error (non-fatal):', error);
+    }
+    
     setRider(null);
     setIsLoggedIn(false);
+    console.log('✅ Logout complete');
   };
 
   return (

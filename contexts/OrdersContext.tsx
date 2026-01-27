@@ -7,6 +7,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback, Rea
 import { riderOrderAPI } from '@/lib/api';
 import { RiderOrder } from '@/types';
 import { useAuth } from './AuthContext';
+import { useLocation } from './LocationContext';
 
 interface OrdersContextType {
   orders: RiderOrder[];
@@ -25,23 +26,36 @@ const OrdersContext = createContext<OrdersContextType | undefined>(undefined);
 
 export function OrdersProvider({ children }: { children: ReactNode }) {
   const { rider, isLoggedIn } = useAuth();
+  const { isOnline } = useLocation();
   const [orders, setOrders] = useState<RiderOrder[]>([]);
   const [completedOrdersList, setCompletedOrdersList] = useState<RiderOrder[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingCompleted, setIsLoadingCompleted] = useState(false);
 
   useEffect(() => {
-    if (isLoggedIn && rider) {
+    if (isLoggedIn && rider && isOnline) {
+      console.log('🔄 Rider is online, starting order polling');
       refreshOrders();
       
-      // Auto-refresh every 30 seconds
+      // Auto-refresh every 30 seconds only when rider is online
       const interval = setInterval(refreshOrders, 30000);
-      return () => clearInterval(interval);
+      return () => {
+        console.log('⏸️ Stopping order polling (rider offline or logged out)');
+        clearInterval(interval);
+      };
+    } else {
+      console.log('⏸️ Order polling disabled - rider offline or logged out');
     }
-  }, [isLoggedIn, rider]);
+  }, [isLoggedIn, rider, isOnline]);
 
   const refreshOrders = useCallback(async () => {
     if (!rider) return;
+    
+    // Don't fetch orders if rider is offline
+    if (!isOnline) {
+      console.log('⏸️ Skipping order fetch - rider is offline');
+      return;
+    }
 
     setIsLoading(true);
     try {
@@ -66,7 +80,7 @@ export function OrdersProvider({ children }: { children: ReactNode }) {
     } finally {
       setIsLoading(false);
     }
-  }, [rider]);
+  }, [rider, isOnline]);
 
   const acceptOrder = useCallback(async (orderId: string) => {
     if (!rider) return;
