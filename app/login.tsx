@@ -266,8 +266,9 @@ export default function LoginScreen() {
                 <View style={styles.inputGroup}>
                   <Text style={styles.label}>Enter OTP</Text>
                   <TextInput
-                    style={styles.input}
+                    style={styles.otpInput}
                     placeholder="123456"
+                    placeholderTextColor="#9CA3AF"
                     value={otp}
                     onChangeText={(text) => setOtp(text.replace(/[^0-9]/g, ''))}
                     keyboardType="number-pad"
@@ -390,6 +391,16 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     fontSize: 16,
     color: '#111827',
+  },
+  otpInput: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    fontSize: 16,
+    color: '#111827',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+    borderRadius: 12,
   },
   sendButton: {
     backgroundColor: '#3B82F6',
