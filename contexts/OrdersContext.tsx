@@ -17,7 +17,7 @@ interface OrdersContextType {
   isLoadingCompleted: boolean;
   refreshOrders: () => Promise<void>;
   refreshCompletedOrders: () => Promise<void>;
-  acceptOrder: (orderId: string) => Promise<void>;
+  acceptOrder: (orderId: string, status: string) => Promise<void>;
   rejectOrder: (orderId: string, reason: string) => Promise<void>;
   updateOrderStatus: (orderId: string, status: string, otp?: string) => Promise<void>;
 }
@@ -82,11 +82,11 @@ export function OrdersProvider({ children }: { children: ReactNode }) {
     }
   }, [rider, isOnline]);
 
-  const acceptOrder = useCallback(async (orderId: string) => {
+  const acceptOrder = useCallback(async (orderId: string, status: string) => {
     if (!rider) return;
 
     try {
-      await riderOrderAPI.acceptOrder(rider.riderId, orderId);
+      await riderOrderAPI.acceptOrder(rider.riderId, orderId, status);
       await refreshOrders();
       console.log(`✅ Order ${orderId} accepted`);
     } catch (error) {

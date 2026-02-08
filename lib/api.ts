@@ -162,8 +162,8 @@ export const riderOrderAPI = {
     return api.get<{ orders: any[]; total: number }>(`/api/v1/riders/${riderId}/orders${query}`);
   },
 
-  acceptOrder: (riderId: string, orderId: string) =>
-    api.post<{ message: string; orderId: string }>(`/api/v1/riders/${riderId}/orders/${orderId}/accept`, {}),
+  acceptOrder: (riderId: string, orderId: string, status: string) =>
+    api.post<{ message: string; orderId: string }>(`/api/v1/riders/${riderId}/orders/${orderId}/accept/${status}`, {}),
 
   rejectOrder: (riderId: string, orderId: string, reason: string) =>
     api.post<{ message: string; orderId: string }>(`/api/v1/riders/${riderId}/orders/${orderId}/reject`, { reason }),

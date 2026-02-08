@@ -83,10 +83,14 @@ export default function OrdersScreen() {
     }
   };
 
-  const handleAcceptOrder = async (orderId: string) => {
+  const handleAcceptOrder = async (orderId: string, status: 'RIDER_ASSIGNED' | 'PICKED_UP') => {
     try {
-      await acceptOrder(orderId);
-      showAlert('Picked Up', 'Order marked as picked up. Now start delivery to customer.', undefined, 'success');
+      await acceptOrder(orderId, status);
+      if (status === 'PICKED_UP') {
+        showAlert('Picked Up', 'Order marked as picked up. Now start delivery to customer.', undefined, 'success');
+      } else {
+        showAlert('Order Accepted', 'You have accepted the order. Head to the pickup location.', undefined, 'success');
+      }
     } catch (error: any) {
       showAlert('Error', error.message || 'Failed to mark as picked up', undefined, 'error');
     }
@@ -245,7 +249,7 @@ export default function OrdersScreen() {
                   key={order.orderId}
                   order={order}
                   onPress={() => handleOrderPress(order.orderId)}
-                  onAccept={order.status === 'RIDER_ASSIGNED' ? () => handleAcceptOrder(order.orderId) : undefined}
+                  onAccept={order.status === 'RIDER_ASSIGNED' ? () => handleAcceptOrder(order.orderId, 'PICKED_UP') : undefined}
                   onStartDelivery={order.status === 'PICKED_UP' ? () => handleStartDelivery(order.orderId) : undefined}
                   onMarkDelivered={order.status === 'OUT_FOR_DELIVERY' ? () => handleMarkDelivered(order.orderId) : undefined}
                   riderLocation={currentLocation || undefined}
