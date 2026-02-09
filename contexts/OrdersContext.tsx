@@ -61,13 +61,15 @@ export function OrdersProvider({ children }: { children: ReactNode }) {
     try {
       // Fetch only active orders (RIDER_ASSIGNED, PICKED_UP, OUT_FOR_DELIVERY)
       // This is optimized - doesn't fetch completed orders on every refresh
-      const [riderAssignedResponse, pickedUpResponse, outForDeliveryResponse] = await Promise.all([
+      const [offeredResponse, riderAssignedResponse, pickedUpResponse, outForDeliveryResponse] = await Promise.all([
+        riderOrderAPI.getOrders(rider.riderId, 'OFFERED_TO_RIDER'),
         riderOrderAPI.getOrders(rider.riderId, 'RIDER_ASSIGNED'),
         riderOrderAPI.getOrders(rider.riderId, 'PICKED_UP'),
         riderOrderAPI.getOrders(rider.riderId, 'OUT_FOR_DELIVERY')
       ]);
       
       const allActiveOrders = [
+        ...offeredResponse.orders,
         ...riderAssignedResponse.orders,
         ...pickedUpResponse.orders,
         ...outForDeliveryResponse.orders
@@ -141,7 +143,7 @@ export function OrdersProvider({ children }: { children: ReactNode }) {
   }, [rider]);
 
   const activeOrders = orders.filter(
-    (o) => ['RIDER_ASSIGNED', 'PICKED_UP', 'OUT_FOR_DELIVERY'].includes(o.status)
+    (o) => ['OFFERED_TO_RIDER', 'RIDER_ASSIGNED', 'PICKED_UP', 'OUT_FOR_DELIVERY'].includes(o.status)
   );
 
   const completedOrders = completedOrdersList;

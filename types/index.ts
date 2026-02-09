@@ -32,10 +32,12 @@ export interface RiderOrder {
   pickupLng?: number;
   deliveryLat?: number;
   deliveryLng?: number;
+  pickupOtp?: string;
   deliveryOtp?: string;
   riderAssignedAt?: string;
   riderPickupAt?: string;
   riderDeliveredAt?: string;
+  offeredAt?: string;
   createdAt: string;
 }
 
@@ -54,6 +56,7 @@ export type OrderStatus =
   | 'PREPARING'
   | 'READY'
   | 'AWAITING_RIDER_ASSIGNMENT'
+  | 'OFFERED_TO_RIDER'
   | 'RIDER_ASSIGNED'
   | 'PICKED_UP'
   | 'OUT_FOR_DELIVERY'

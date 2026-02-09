@@ -5,18 +5,29 @@
 
 import auth, { FirebaseAuthTypes } from '@react-native-firebase/auth';
 
-// Test phone number - skip Firebase and use mock OTP
-const TEST_PHONE = '+919999999999';
+// Test phone numbers (last 10 digits) - skip Firebase and use mock OTP
+const TEST_PHONE_LAST10 = new Set([
+  '9999999999',
+  '9561714569',
+  '1916533972',
+  '9380065803',
+]);
 const TEST_OTP = '123456';
 
 // Mock confirmation object for test phone
 class MockConfirmation {
+  private phoneNumber: string;
+
+  constructor(phoneNumber: string) {
+    this.phoneNumber = phoneNumber;
+  }
+
   async confirm(code: string) {
     if (code === TEST_OTP) {
       return {
         user: {
-          phoneNumber: TEST_PHONE,
-          getIdToken: async () => `test_token_rider_${TEST_PHONE}_${Date.now()}`
+          phoneNumber: this.phoneNumber,
+          getIdToken: async () => `test_token_rider_${this.phoneNumber}_${Date.now()}`
         },
         additionalUserInfo: {
           isNewUser: false
@@ -42,11 +53,13 @@ export async function sendFirebaseOTP(
 }> {
   try {
     // Test phone number - skip Firebase completely
-    if (phoneNumber === TEST_PHONE) {
+    const normalized = phoneNumber.replace(/\D/g, '');
+    const last10 = normalized.length > 10 ? normalized.slice(-10) : normalized;
+    if (TEST_PHONE_LAST10.has(last10)) {
       console.log('🧪 Test phone detected:', phoneNumber, '- Using mock OTP');
       return {
         success: true,
-        confirmation: new MockConfirmation(),
+        confirmation: new MockConfirmation(phoneNumber),
         testMessage: `Test mode for riders: OTP is ${TEST_OTP}`
       };
     }

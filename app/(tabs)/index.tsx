@@ -96,6 +96,15 @@ export default function OrdersScreen() {
     }
   };
 
+  const handleRejectOrder = async (orderId: string, reason: string = 'Rider rejected') => {
+    try {
+      await rejectOrder(orderId, reason);
+      showAlert('Order Rejected', 'You have rejected the order.', undefined, 'info');
+    } catch (error: any) {
+      showAlert('Error', error.message || 'Failed to reject order', undefined, 'error');
+    }
+  };
+
   const handleStartDelivery = async (orderId: string) => {
     try {
       // Find the order to get delivery coordinates
@@ -138,7 +147,7 @@ export default function OrdersScreen() {
     switch (selectedTab) {
       case 'active':
         // All active orders: assigned, picked up, or out for delivery
-        return orders.filter((o) => ['RIDER_ASSIGNED', 'PICKED_UP', 'OUT_FOR_DELIVERY'].includes(o.status));
+        return orders.filter((o) => ['OFFERED_TO_RIDER', 'RIDER_ASSIGNED', 'PICKED_UP', 'OUT_FOR_DELIVERY'].includes(o.status));
       case 'completed':
         // Completed/delivered orders
         return completedOrders;
@@ -249,7 +258,8 @@ export default function OrdersScreen() {
                   key={order.orderId}
                   order={order}
                   onPress={() => handleOrderPress(order.orderId)}
-                  onAccept={order.status === 'RIDER_ASSIGNED' ? () => handleAcceptOrder(order.orderId, 'PICKED_UP') : undefined}
+                  onAccept={order.status === 'OFFERED_TO_RIDER' ? () => handleAcceptOrder(order.orderId, 'RIDER_ASSIGNED') : order.status === 'RIDER_ASSIGNED' ? () => handleAcceptOrder(order.orderId, 'PICKED_UP') : undefined}
+                  onReject={order.status === 'OFFERED_TO_RIDER' ? (reason?: string) => handleRejectOrder(order.orderId, reason) : undefined}
                   onStartDelivery={order.status === 'PICKED_UP' ? () => handleStartDelivery(order.orderId) : undefined}
                   onMarkDelivered={order.status === 'OUT_FOR_DELIVERY' ? () => handleMarkDelivered(order.orderId) : undefined}
                   riderLocation={currentLocation || undefined}

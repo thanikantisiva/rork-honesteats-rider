@@ -14,19 +14,19 @@ interface OrderCardProps {
   order: RiderOrder;
   onPress: () => void;
   onAccept?: () => void;
-  onReject?: () => void;
+  onReject?: (reason?: string) => void;
   onStartDelivery?: () => void;
   onMarkDelivered?: () => void;
   riderLocation?: { lat: number; lng: number };
 }
 
 export function OrderCard({ order, onPress, onAccept, onReject, onStartDelivery, onMarkDelivered, riderLocation }: OrderCardProps) {
+  const isOffer = order.status === 'OFFERED_TO_RIDER';
   const isNewOrder = order.status === 'RIDER_ASSIGNED';
   const isPickedUp = order.status === 'PICKED_UP';
   const isOutForDelivery = order.status === 'OUT_FOR_DELIVERY';
   const isActive = ['PICKED_UP', 'OUT_FOR_DELIVERY'].includes(order.status);
   const isCompleted = order.status === 'DELIVERED';
-
   // State for OTP verification (for delivery)
   const [enteredOtp, setEnteredOtp] = useState('');
   const [isOtpVerified, setIsOtpVerified] = useState(false);
@@ -72,6 +72,7 @@ export function OrderCard({ order, onPress, onAccept, onReject, onStartDelivery,
     <TouchableOpacity
       style={[
         styles.card, 
+        isOffer && styles.cardOffer,
         isNewOrder && styles.cardNew,
         isPickedUp && styles.cardPickedUp,
         isOutForDelivery && styles.cardOutForDelivery
@@ -83,7 +84,9 @@ export function OrderCard({ order, onPress, onAccept, onReject, onStartDelivery,
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.orderId}>#{order.orderId}</Text>
-        <StatusBadge status={order.status} />
+        <View style={styles.headerRight}>
+          <StatusBadge status={order.status} />
+        </View>
       </View>
 
       {/* Restaurant Info */}
@@ -130,11 +133,11 @@ export function OrderCard({ order, onPress, onAccept, onReject, onStartDelivery,
       </View>
 
       {/* Pickup OTP Display - For RIDER_ASSIGNED and PICKED_UP */}
-      {['RIDER_ASSIGNED', 'PICKED_UP'].includes(order.status) && order.deliveryOtp && (
+      {['RIDER_ASSIGNED', 'PICKED_UP'].includes(order.status) && order.pickupOtp && (
         <View style={styles.pickupOtpBadge}>
           <Lock size={14} color="#92400E" />
           <Text style={styles.otpLabel}>Pickup OTP (Show to Restaurant):</Text>
-          <Text style={styles.otpText}>{order.deliveryOtp}</Text>
+          <Text style={styles.otpText}>{order.pickupOtp}</Text>
         </View>
       )}
 
@@ -163,6 +166,32 @@ export function OrderCard({ order, onPress, onAccept, onReject, onStartDelivery,
       )}
 
       {/* Action Buttons */}
+      {isOffer && onAccept && onReject && (
+        <View style={styles.offerActions}>
+          <TouchableOpacity
+            style={styles.offerRejectButton}
+            onPress={(e) => {
+              e.stopPropagation();
+              onReject('Rider rejected');
+            }}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.offerRejectButtonText}>REJECT</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.offerAcceptButton}
+            onPress={(e) => {
+              e.stopPropagation();
+              onAccept();
+            }}
+            activeOpacity={0.8}
+          >
+            <CheckCircle size={18} color="#FFFFFF" />
+            <Text style={styles.offerAcceptButtonText}>ACCEPT</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
       {isNewOrder && onAccept && (
         <TouchableOpacity
           style={styles.pickedUpButton}
@@ -210,6 +239,7 @@ export function OrderCard({ order, onPress, onAccept, onReject, onStartDelivery,
           </Text>
         </TouchableOpacity>
       )}
+
     </TouchableOpacity>
   );
 }
@@ -222,6 +252,11 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     borderWidth: 1,
     borderColor: '#E5E7EB',
+  },
+  cardOffer: {
+    borderColor: '#0EA5E9',
+    borderWidth: 2,
+    backgroundColor: '#F0F9FF',
   },
   cardNew: {
     borderColor: '#3B82F6',
@@ -243,6 +278,11 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 12,
+  },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   orderId: {
     fontSize: 14,
@@ -421,6 +461,43 @@ const styles = StyleSheet.create({
   },
   markDeliveredButtonText: {
     fontSize: 15,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    letterSpacing: 1,
+  },
+  offerActions: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 4,
+  },
+  offerRejectButton: {
+    flex: 1,
+    backgroundColor: '#FEE2E2',
+    paddingVertical: 12,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#FCA5A5',
+  },
+  offerRejectButtonText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#B91C1C',
+    letterSpacing: 1,
+  },
+  offerAcceptButton: {
+    flex: 1.2,
+    backgroundColor: '#0EA5E9',
+    paddingVertical: 12,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 6,
+  },
+  offerAcceptButtonText: {
+    fontSize: 14,
     fontWeight: '700',
     color: '#FFFFFF',
     letterSpacing: 1,

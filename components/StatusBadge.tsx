@@ -20,6 +20,7 @@ export function StatusBadge({ status }: StatusBadgeProps) {
     PREPARING: { label: 'Preparing', bgColor: '#FED7AA', textColor: '#9A3412' },
     READY: { label: 'Ready', bgColor: '#BBF7D0', textColor: '#14532D' },
     AWAITING_RIDER_ASSIGNMENT: { label: 'Finding Rider', bgColor: '#FEF3C7', textColor: '#92400E' },
+    OFFERED_TO_RIDER: { label: 'Offer', bgColor: '#E0F2FE', textColor: '#0C4A6E' },
     RIDER_ASSIGNED: { label: 'Assigned', bgColor: '#FEF3C7', textColor: '#92400E' },
     PICKED_UP: { label: 'Picked Up', bgColor: '#D1FAE5', textColor: '#065F46' },
     OUT_FOR_DELIVERY: { label: 'In Transit', bgColor: '#DBEAFE', textColor: '#1E3A8A' },
