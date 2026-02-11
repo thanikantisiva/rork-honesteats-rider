@@ -15,7 +15,7 @@ interface OrdersContextType {
   completedOrders: RiderOrder[];
   isLoading: boolean;
   isLoadingCompleted: boolean;
-  refreshOrders: () => Promise<void>;
+  refreshOrders: (force?: boolean) => Promise<void>;
   refreshCompletedOrders: () => Promise<void>;
   acceptOrder: (orderId: string, status: string) => Promise<void>;
   rejectOrder: (orderId: string, reason: string) => Promise<void>;
@@ -48,11 +48,11 @@ export function OrdersProvider({ children }: { children: ReactNode }) {
     }
   }, [isLoggedIn, rider, isOnline]);
 
-  const refreshOrders = useCallback(async () => {
+  const refreshOrders = useCallback(async (force: boolean = false) => {
     if (!rider) return;
     
-    // Don't fetch orders if rider is offline
-    if (!isOnline) {
+    // Don't fetch orders if rider is offline unless forced (pull-to-refresh)
+    if (!isOnline && !force) {
       console.log('⏸️ Skipping order fetch - rider is offline');
       return;
     }

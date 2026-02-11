@@ -4,7 +4,7 @@
  */
 
 import React, { useState } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, TextInput, Alert } from 'react-native';
+import { StyleSheet, Text, View, TouchableOpacity, TextInput, Alert, Modal } from 'react-native';
 import { MapPin, Home, Package, IndianRupee, Navigation, CheckCircle, Truck, Lock } from 'lucide-react-native';
 import { RiderOrder } from '@/types';
 import { StatusBadge } from './StatusBadge';
@@ -27,9 +27,8 @@ export function OrderCard({ order, onPress, onAccept, onReject, onStartDelivery,
   const isOutForDelivery = order.status === 'OUT_FOR_DELIVERY';
   const isActive = ['PICKED_UP', 'OUT_FOR_DELIVERY'].includes(order.status);
   const isCompleted = order.status === 'DELIVERED';
-  // State for OTP verification (for delivery)
-  const [enteredOtp, setEnteredOtp] = useState('');
-  const [isOtpVerified, setIsOtpVerified] = useState(false);
+  const [otpModalVisible, setOtpModalVisible] = useState(false);
+  const [otpEntry, setOtpEntry] = useState('');
 
   // Calculate distance to pickup
   let distanceToPickup: number | undefined;
@@ -42,27 +41,21 @@ export function OrderCard({ order, onPress, onAccept, onReject, onStartDelivery,
     );
   }
 
-  // Auto-verify OTP when 4 digits entered
-  const handleOtpChange = (text: string) => {
-    setEnteredOtp(text);
-    
-    // Auto-verify when 4 digits entered
-    if (text.length === 4 && order.deliveryOtp) {
-      if (text === order.deliveryOtp) {
-        setIsOtpVerified(true);
-        Alert.alert('✓ Verified', 'OTP correct! You can now mark as delivered.');
-      } else {
-        Alert.alert('✗ Wrong OTP', 'Incorrect OTP. Please try again.');
-        setTimeout(() => setEnteredOtp(''), 500);
-      }
-    }
-  };
-
-  const handleMarkDeliveredWithOtp = () => {
-    if (!isOtpVerified) {
-      Alert.alert('OTP Required', 'Please enter customer\'s OTP first.');
+  const handleConfirmOtp = () => {
+    if (!order.deliveryOtp) {
+      Alert.alert('OTP Required', 'Delivery OTP is missing for this order.');
       return;
     }
+    if (otpEntry.length !== 4) {
+      Alert.alert('Invalid OTP', 'Please enter the 4-digit OTP.');
+      return;
+    }
+    if (otpEntry !== order.deliveryOtp) {
+      Alert.alert('Incorrect OTP', 'The OTP you entered is incorrect.');
+      return;
+    }
+    setOtpModalVisible(false);
+    setOtpEntry('');
     if (onMarkDelivered) {
       onMarkDelivered();
     }
@@ -141,30 +134,6 @@ export function OrderCard({ order, onPress, onAccept, onReject, onStartDelivery,
         </View>
       )}
 
-      {/* Delivery OTP Verification - For OUT_FOR_DELIVERY */}
-      {isOutForDelivery && order.deliveryOtp && !isOtpVerified && (
-        <View style={styles.otpInputSection}>
-          <Text style={styles.otpInputLabel}>Ask customer for OTP:</Text>
-          <TextInput
-            style={styles.otpInputSimple}
-            value={enteredOtp}
-            onChangeText={handleOtpChange}
-            placeholder="Enter 4-digit OTP"
-            placeholderTextColor="#9CA3AF"
-            keyboardType="number-pad"
-            maxLength={4}
-            autoFocus={false}
-          />
-        </View>
-      )}
-
-      {isOutForDelivery && isOtpVerified && (
-        <View style={styles.otpVerifiedSection}>
-          <CheckCircle size={20} color="#10B981" />
-          <Text style={styles.otpVerifiedSimple}>OTP Verified ✓</Text>
-        </View>
-      )}
-
       {/* Action Buttons */}
       {isOffer && onAccept && onReject && (
         <View style={styles.offerActions}>
@@ -222,23 +191,59 @@ export function OrderCard({ order, onPress, onAccept, onReject, onStartDelivery,
 
       {isOutForDelivery && onMarkDelivered && (
         <TouchableOpacity
-          style={[
-            styles.markDeliveredButton,
-            !isOtpVerified && styles.markDeliveredButtonDisabled
-          ]}
           onPress={(e) => {
             e.stopPropagation();
-            handleMarkDeliveredWithOtp();
+            setOtpModalVisible(true);
           }}
-          disabled={!isOtpVerified}
+          style={styles.markDeliveredButton}
           activeOpacity={0.8}
         >
           <CheckCircle size={18} color="#FFFFFF" />
-          <Text style={styles.markDeliveredButtonText}>
-            {isOtpVerified ? 'MARK AS DELIVERED' : 'VERIFY OTP FIRST'}
-          </Text>
+          <Text style={styles.markDeliveredButtonText}>MARK AS DELIVERED</Text>
         </TouchableOpacity>
       )}
+
+      <Modal
+        visible={otpModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setOtpModalVisible(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Enter Delivery OTP</Text>
+            <TextInput
+              style={styles.modalInput}
+              value={otpEntry}
+              onChangeText={(text) => setOtpEntry(text.replace(/[^0-9]/g, ''))}
+              placeholder="4-digit OTP"
+              placeholderTextColor="#9CA3AF"
+              keyboardType="number-pad"
+              maxLength={4}
+              autoFocus
+            />
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={styles.modalCancelButton}
+                onPress={() => {
+                  setOtpModalVisible(false);
+                  setOtpEntry('');
+                }}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.modalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.modalConfirmButton}
+                onPress={handleConfirmOtp}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.modalConfirmText}>Verify & Deliver</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
     </TouchableOpacity>
   );
@@ -375,44 +380,6 @@ const styles = StyleSheet.create({
     color: '#92400E',
     letterSpacing: 4,
   },
-  otpInputSection: {
-    marginBottom: 12,
-  },
-  otpInputLabel: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#6B7280',
-    marginBottom: 8,
-  },
-  otpInputSimple: {
-    backgroundColor: '#FFFFFF',
-    borderWidth: 2,
-    borderColor: '#E5E7EB',
-    borderRadius: 10,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    fontSize: 24,
-    fontWeight: '700',
-    textAlign: 'center',
-    letterSpacing: 8,
-    color: '#111827',
-  },
-  otpVerifiedSection: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    backgroundColor: '#D1FAE5',
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    marginBottom: 12,
-  },
-  otpVerifiedSimple: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#10B981',
-  },
   pickedUpButton: {
     backgroundColor: '#10B981',
     paddingVertical: 14,
@@ -455,15 +422,72 @@ const styles = StyleSheet.create({
     gap: 8,
     marginTop: 4,
   },
-  markDeliveredButtonDisabled: {
-    backgroundColor: '#9CA3AF',
-    opacity: 0.6,
-  },
   markDeliveredButtonText: {
     fontSize: 15,
     fontWeight: '700',
     color: '#FFFFFF',
     letterSpacing: 1,
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(17, 24, 39, 0.55)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+  },
+  modalCard: {
+    width: '100%',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 20,
+  },
+  modalTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#111827',
+    marginBottom: 12,
+  },
+  modalInput: {
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 18,
+    fontWeight: '600',
+    textAlign: 'center',
+    letterSpacing: 6,
+    color: '#111827',
+    marginBottom: 16,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  modalCancelButton: {
+    flex: 1,
+    backgroundColor: '#F3F4F6',
+    borderRadius: 10,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  modalCancelText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#374151',
+  },
+  modalConfirmButton: {
+    flex: 1.2,
+    backgroundColor: '#10B981',
+    borderRadius: 10,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  modalConfirmText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
   offerActions: {
     flexDirection: 'row',

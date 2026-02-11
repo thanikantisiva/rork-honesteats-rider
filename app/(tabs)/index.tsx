@@ -213,7 +213,7 @@ export default function OrdersScreen() {
           refreshControl={
             <RefreshControl
               refreshing={selectedTab === 'completed' ? isLoadingCompleted : isLoading}
-              onRefresh={selectedTab === 'completed' ? refreshCompletedOrders : refreshOrders}
+              onRefresh={selectedTab === 'completed' ? refreshCompletedOrders : () => refreshOrders(true)}
               tintColor="#3B82F6"
               colors={['#3B82F6']}
             />
