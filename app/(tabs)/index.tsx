@@ -16,13 +16,14 @@ import {
   Linking,
 } from 'react-native';
 import { useRouter, Stack } from 'expo-router';
-import { Package, MapPin } from 'lucide-react-native';
+import { Package, Bike } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useOrders } from '@/contexts/OrdersContext';
 import { useLocation } from '@/contexts/LocationContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { OrderCard } from '@/components/OrderCard';
 import { useThemedAlert } from '@/components/ThemedAlert';
+import { riderTheme } from '@/theme/riderTheme';
 
 type TabFilter = 'active' | 'completed';
 
@@ -37,7 +38,6 @@ export default function OrdersScreen() {
   const [isTogglingOnline, setIsTogglingOnline] = useState(false);
   const [hasLoadedCompleted, setHasLoadedCompleted] = useState(false);
 
-  // Load completed orders when user switches to Completed tab
   React.useEffect(() => {
     if (selectedTab === 'completed' && !hasLoadedCompleted) {
       refreshCompletedOrders();
@@ -46,9 +46,8 @@ export default function OrdersScreen() {
   }, [selectedTab, hasLoadedCompleted, refreshCompletedOrders]);
 
   const handleToggleOnline = async () => {
-    const targetStatus = !isOnline; // Determine what we're switching to
-    
-    // Prevent going offline if there are active orders
+    const targetStatus = !isOnline;
+
     if (!targetStatus && activeOrders.length > 0) {
       showAlert(
         'Cannot Go Offline',
@@ -58,24 +57,21 @@ export default function OrdersScreen() {
       );
       return;
     }
-    
+
     setIsTogglingOnline(true);
     try {
       await toggleOnline();
-      // Success feedback
       showAlert(
         targetStatus ? 'You\'re Online!' : 'You\'re Offline',
-        targetStatus 
-          ? 'You will now receive order assignments' 
-          : 'You won\'t receive new orders',
+        targetStatus ? 'You will now receive order assignments' : 'You won\'t receive new orders',
         undefined,
         targetStatus ? 'success' : 'info'
       );
     } catch (error: any) {
       showAlert(
-        'Error', 
-        `Failed to go ${targetStatus ? 'online' : 'offline'}. Please check your location permissions and try again.`, 
-        undefined, 
+        'Error',
+        `Failed to go ${targetStatus ? 'online' : 'offline'}. Please check your location permissions and try again.`,
+        undefined,
         'error'
       );
     } finally {
@@ -96,7 +92,7 @@ export default function OrdersScreen() {
     }
   };
 
-  const handleRejectOrder = async (orderId: string, reason: string = 'Rider rejected') => {
+  const handleRejectOrder = async (orderId: string, reason: string = 'Dude rejected') => {
     try {
       await rejectOrder(orderId, reason);
       showAlert('Order Rejected', 'You have rejected the order.', undefined, 'info');
@@ -107,22 +103,20 @@ export default function OrdersScreen() {
 
   const handleStartDelivery = async (orderId: string) => {
     try {
-      // Find the order to get delivery coordinates
       const order = orders.find(o => o.orderId === orderId);
-      
+
       await updateOrderStatus(orderId, 'OUT_FOR_DELIVERY');
-      
-      // Automatically open Google Maps to delivery location
+
       if (order?.deliveryLat && order?.deliveryLng) {
         const mapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${order.deliveryLat},${order.deliveryLng}&travelmode=driving`;
-        
+
         setTimeout(() => {
           Linking.openURL(mapsUrl).catch(err => {
             console.error('Failed to open Google Maps:', err);
           });
-        }, 500); // Small delay to allow alert to show
+        }, 500);
       }
-      
+
       showAlert('Out for Delivery', 'Opening navigation to customer location...', undefined, 'success');
     } catch (error: any) {
       showAlert('Error', error.message || 'Failed to start delivery', undefined, 'error');
@@ -142,14 +136,11 @@ export default function OrdersScreen() {
     router.push(`/order-details?id=${orderId}` as any);
   };
 
-  // Filter orders based on selected tab
   const filteredOrders = (() => {
     switch (selectedTab) {
       case 'active':
-        // All active orders: assigned, picked up, or out for delivery
         return orders.filter((o) => ['OFFERED_TO_RIDER', 'RIDER_ASSIGNED', 'PICKED_UP', 'OUT_FOR_DELIVERY'].includes(o.status));
       case 'completed':
-        // Completed/delivered orders
         return completedOrders;
     }
   })();
@@ -158,95 +149,108 @@ export default function OrdersScreen() {
     <>
       <Stack.Screen options={{ headerShown: false }} />
       <View style={styles.container}>
-        {/* Header */}
+        {/* Modern Header */}
         <View style={[styles.header, { paddingTop: insets.top + 16 }]}>
-          <View style={styles.headerLeft}>
-            <Text style={styles.greeting}>Hello, {rider?.name.split(' ')[0]}</Text>
-            <Text style={styles.subGreeting}>
-              {isTogglingOnline 
-                ? (isOnline ? 'Going offline...' : 'Going online...')
-                : (isOnline 
-                    ? (activeOrders.length > 0 
-                        ? `${activeOrders.length} active order${activeOrders.length > 1 ? 's' : ''}`
-                        : 'You are online')
-                    : 'You are offline')
-              }
-            </Text>
-          </View>
-          <View style={styles.onlineToggle}>
-            {isTogglingOnline && (
-              <ActivityIndicator size="small" color={isOnline ? '#EF4444' : '#10B981'} style={styles.toggleLoader} />
-            )}
-            <Text style={[styles.toggleLabel, isOnline && styles.toggleLabelActive, isTogglingOnline && styles.toggleLabelDisabled]}>
-              {isOnline ? 'Online' : 'Offline'}
-            </Text>
-            <Switch
-              value={isOnline}
-              onValueChange={handleToggleOnline}
-              disabled={isTogglingOnline}
-              trackColor={{ false: '#D1D5DB', true: '#10B981' }}
-              thumbColor="#FFFFFF"
-            />
-          </View>
-        </View>
-
-        {/* Tab Filters */}
-        <View style={styles.tabs}>
-          {(['active', 'completed'] as TabFilter[]).map((tab) => (
+          <View style={styles.headerContent}>
+            <View style={styles.headerLeft}>
+              <Text style={styles.greeting}>Hey there,</Text>
+              <Text style={styles.userName}>{rider?.name.split(' ')[0]}</Text>
+            </View>
+            
+            {/* Floating Online Toggle Card */}
             <TouchableOpacity
-              key={tab}
-              style={[styles.tab, selectedTab === tab && styles.tabActive]}
-              onPress={() => setSelectedTab(tab)}
-              activeOpacity={0.7}
+              style={[styles.onlineCard, isOnline && styles.onlineCardActive]}
+              onPress={handleToggleOnline}
+              disabled={isTogglingOnline}
+              activeOpacity={0.85}
             >
-              <Text style={[styles.tabText, selectedTab === tab && styles.tabTextActive]}>
-                {tab.charAt(0).toUpperCase() + tab.slice(1)}
+              {isTogglingOnline ? (
+                <ActivityIndicator size="small" color={isOnline ? riderTheme.colors.danger : riderTheme.colors.success} />
+              ) : (
+                <View style={[styles.onlineDot, isOnline && styles.onlineDotActive]} />
+              )}
+              <Text style={[styles.onlineText, isOnline && styles.onlineTextActive]}>
+                {isOnline ? 'Online' : 'Offline'}
               </Text>
             </TouchableOpacity>
-          ))}
+          </View>
+          
+          {/* Status Info Card */}
+          {isOnline && (
+            <View style={styles.statusCard}>
+              <Text style={styles.statusLabel}>Active Orders</Text>
+              <Text style={styles.statusValue}>{activeOrders.length}</Text>
+            </View>
+          )}
         </View>
 
-        {/* Orders List */}
+        {/* Tab Selector */}
+        <View style={styles.tabsContainer}>
+          <View style={styles.tabs}>
+            {(['active', 'completed'] as TabFilter[]).map((tab) => (
+              <TouchableOpacity
+                key={tab}
+                style={[styles.tab, selectedTab === tab && styles.tabActive]}
+                onPress={() => setSelectedTab(tab)}
+                activeOpacity={0.85}
+              >
+                <Text style={[styles.tabText, selectedTab === tab && styles.tabTextActive]}>
+                  {tab.charAt(0).toUpperCase() + tab.slice(1)}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+
+        {/* Content */}
         <ScrollView
           style={styles.content}
+          contentContainerStyle={styles.contentContainer}
           showsVerticalScrollIndicator={false}
           refreshControl={
             <RefreshControl
               refreshing={selectedTab === 'completed' ? isLoadingCompleted : isLoading}
               onRefresh={selectedTab === 'completed' ? refreshCompletedOrders : () => refreshOrders(true)}
-              tintColor="#3B82F6"
-              colors={['#3B82F6']}
+              tintColor={riderTheme.colors.primary}
+              colors={[riderTheme.colors.primary]}
             />
           }
         >
           {isLoading && filteredOrders.length === 0 ? (
             <View style={styles.loadingContainer}>
-              <ActivityIndicator size="large" color="#3B82F6" />
+              <ActivityIndicator size="large" color={riderTheme.colors.primary} />
               <Text style={styles.loadingText}>Loading orders...</Text>
             </View>
           ) : filteredOrders.length === 0 ? (
             <View style={styles.emptyState}>
-              <Package size={64} color="#D1D5DB" />
-              <Text style={styles.emptyTitle}>No Orders</Text>
+              <View style={styles.emptyIconWrap}>
+                <Bike size={52} color={riderTheme.colors.textMuted} strokeWidth={2} />
+              </View>
+              <Text style={styles.emptyTitle}>
+                {isOnline ? 'No Orders Yet' : 'You\'re Offline'}
+              </Text>
               <Text style={styles.emptyText}>
-                {isOnline
-                  ? 'New orders will appear here when assigned'
-                  : 'Go online to start receiving orders'}
+                {isOnline 
+                  ? 'New orders will appear here when assigned to you' 
+                  : 'Go online to start receiving order assignments'}
               </Text>
               {!isOnline && (
-                <TouchableOpacity 
-                  style={[styles.goOnlineButton, isTogglingOnline && styles.goOnlineButtonDisabled]} 
+                <TouchableOpacity
+                  style={[styles.goOnlineButton, isTogglingOnline && styles.goOnlineButtonDisabled]}
                   onPress={handleToggleOnline}
                   disabled={isTogglingOnline}
-                  activeOpacity={0.8}
+                  activeOpacity={0.85}
                 >
                   {isTogglingOnline ? (
                     <>
-                      <ActivityIndicator size="small" color="#FFFFFF" />
-                      <Text style={styles.goOnlineButtonText}>Going Online...</Text>
+                      <ActivityIndicator size="small" color={riderTheme.colors.textInverse} />
+                      <Text style={styles.goOnlineButtonText}>Switching...</Text>
                     </>
                   ) : (
-                    <Text style={styles.goOnlineButtonText}>Go Online</Text>
+                    <>
+                      <Package size={18} color={riderTheme.colors.textInverse} strokeWidth={2.5} />
+                      <Text style={styles.goOnlineButtonText}>Go Online Now</Text>
+                    </>
                   )}
                 </TouchableOpacity>
               )}
@@ -278,118 +282,179 @@ export default function OrdersScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F9FAFB',
+    backgroundColor: riderTheme.colors.background,
   },
   header: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: riderTheme.colors.surface,
     paddingHorizontal: 20,
-    paddingBottom: 16,
+    paddingBottom: 20,
+    ...riderTheme.shadow.medium,
+  },
+  headerContent: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
+    marginBottom: 16,
   },
   headerLeft: {
     flex: 1,
   },
   greeting: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: riderTheme.colors.textSecondary,
+    marginBottom: 2,
+  },
+  userName: {
     fontSize: 24,
-    fontWeight: '700',
-    color: '#111827',
+    fontWeight: '800',
+    color: riderTheme.colors.textPrimary,
+    letterSpacing: 0.3,
   },
-  subGreeting: {
-    fontSize: 13,
-    color: '#6B7280',
-    marginTop: 2,
-  },
-  onlineToggle: {
+  onlineCard: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+    backgroundColor: riderTheme.colors.surfaceMuted,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    borderRadius: riderTheme.radius.full,
+    borderWidth: 1.5,
+    borderColor: riderTheme.colors.border,
+    ...riderTheme.shadow.small,
   },
-  toggleLoader: {
-    marginRight: 4,
+  onlineCardActive: {
+    backgroundColor: riderTheme.colors.successSoft,
+    borderColor: riderTheme.colors.success,
   },
-  toggleLabel: {
-    fontSize: 14,
+  onlineDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: riderTheme.colors.textMuted,
+  },
+  onlineDotActive: {
+    backgroundColor: riderTheme.colors.success,
+  },
+  onlineText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: riderTheme.colors.textSecondary,
+  },
+  onlineTextActive: {
+    color: riderTheme.colors.successDark,
+  },
+  statusCard: {
+    backgroundColor: riderTheme.colors.primarySoft,
+    borderRadius: riderTheme.radius.md,
+    padding: 10,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    borderLeftWidth: 3,
+    borderLeftColor: riderTheme.colors.primary,
+    marginTop: 2,
+  },
+  statusLabel: {
+    fontSize: 11,
     fontWeight: '600',
-    color: '#6B7280',
+    color: riderTheme.colors.textSecondary,
   },
-  toggleLabelActive: {
-    color: '#10B981',
+  statusValue: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: riderTheme.colors.primary,
   },
-  toggleLabelDisabled: {
-    opacity: 0.5,
+  tabsContainer: {
+    backgroundColor: riderTheme.colors.surface,
+    paddingHorizontal: 20,
+    paddingTop: 6,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: riderTheme.colors.borderLight,
   },
   tabs: {
     flexDirection: 'row',
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    gap: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
+    backgroundColor: riderTheme.colors.surfaceMuted,
+    borderRadius: riderTheme.radius.lg,
+    padding: 4,
+    gap: 4,
   },
   tab: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: '#F3F4F6',
+    flex: 1,
+    paddingVertical: 10,
+    alignItems: 'center',
+    borderRadius: riderTheme.radius.md,
   },
   tabActive: {
-    backgroundColor: '#3B82F6',
+    backgroundColor: riderTheme.colors.primary,
+    ...riderTheme.shadow.small,
   },
   tabText: {
     fontSize: 13,
-    fontWeight: '600',
-    color: '#6B7280',
+    fontWeight: '700',
+    color: riderTheme.colors.textSecondary,
   },
   tabTextActive: {
-    color: '#FFFFFF',
+    color: riderTheme.colors.textInverse,
   },
   content: {
     flex: 1,
   },
+  contentContainer: {
+    flexGrow: 1,
+  },
   loadingContainer: {
+    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 80,
+    paddingVertical: 100,
   },
   loadingText: {
     fontSize: 14,
-    color: '#6B7280',
-    marginTop: 12,
+    fontWeight: '500',
+    color: riderTheme.colors.textSecondary,
+    marginTop: 16,
   },
   emptyState: {
+    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 80,
-    paddingHorizontal: 32,
+    paddingHorizontal: 40,
+  },
+  emptyIconWrap: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: riderTheme.colors.surfaceMuted,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 20,
   },
   emptyTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#111827',
-    marginTop: 16,
+    fontSize: 18,
+    fontWeight: '800',
+    color: riderTheme.colors.textPrimary,
     marginBottom: 8,
   },
   emptyText: {
-    fontSize: 14,
-    color: '#6B7280',
+    fontSize: 13,
+    color: riderTheme.colors.textSecondary,
     textAlign: 'center',
-    lineHeight: 20,
+    lineHeight: 22,
   },
   goOnlineButton: {
-    backgroundColor: '#10B981',
+    backgroundColor: riderTheme.colors.success,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
+    gap: 10,
     paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 12,
-    marginTop: 20,
+    paddingVertical: 14,
+    borderRadius: riderTheme.radius.lg,
+    marginTop: 24,
+    ...riderTheme.shadow.medium,
   },
   goOnlineButtonDisabled: {
     opacity: 0.7,
@@ -397,9 +462,9 @@ const styles = StyleSheet.create({
   goOnlineButtonText: {
     fontSize: 14,
     fontWeight: '700',
-    color: '#FFFFFF',
+    color: riderTheme.colors.textInverse,
   },
   ordersList: {
-    padding: 16,
+    padding: 20,
   },
 });

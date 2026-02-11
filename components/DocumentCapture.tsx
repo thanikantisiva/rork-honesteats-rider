@@ -1,6 +1,5 @@
 /**
  * Document Capture Component
- * Allows riders to capture/upload Aadhar and PAN documents
  */
 
 import React, { useState } from 'react';
@@ -8,6 +7,7 @@ import { View, Text, TouchableOpacity, Image, StyleSheet, Alert } from 'react-na
 import * as ImagePicker from 'expo-image-picker';
 import { Camera, Image as ImageIcon, X } from 'lucide-react-native';
 import { validateImageSize, getImageSizeMB } from '@/utils/image-utils';
+import { riderTheme } from '@/theme/riderTheme';
 
 interface DocumentCaptureProps {
   title: string;
@@ -22,7 +22,7 @@ export function DocumentCapture({
   description,
   onImageCaptured,
   currentImage,
-  required = true
+  required = true,
 }: DocumentCaptureProps) {
   const [loading, setLoading] = useState(false);
 
@@ -30,7 +30,6 @@ export function DocumentCapture({
     try {
       setLoading(true);
 
-      // Request permissions
       if (useCamera) {
         const { status } = await ImagePicker.requestCameraPermissionsAsync();
         if (status !== 'granted') {
@@ -63,8 +62,7 @@ export function DocumentCapture({
 
       if (!result.canceled && result.assets[0].base64) {
         const base64 = `data:image/jpeg;base64,${result.assets[0].base64}`;
-        
-        // Validate size
+
         if (!validateImageSize(base64, 5)) {
           const sizeMB = getImageSizeMB(base64);
           Alert.alert('Image Too Large', `Image size is ${sizeMB.toFixed(1)}MB. Please choose an image smaller than 5MB.`);
@@ -102,8 +100,8 @@ export function DocumentCapture({
         </View>
       ) : (
         <View style={styles.placeholder}>
-          <ImageIcon size={48} color="#9CA3AF" />
-          <Text style={styles.placeholderText}>No image captured</Text>
+          <ImageIcon size={42} color={riderTheme.colors.textMuted} />
+          <Text style={styles.placeholderText}>No image selected</Text>
         </View>
       )}
 
@@ -112,9 +110,9 @@ export function DocumentCapture({
           style={[styles.captureButton, styles.cameraButton]}
           onPress={() => pickImage(true)}
           disabled={loading}
-          activeOpacity={0.8}
+          activeOpacity={0.88}
         >
-          <Camera size={20} color="#FFFFFF" />
+          <Camera size={18} color="#FFFFFF" />
           <Text style={styles.captureButtonText}>Take Photo</Text>
         </TouchableOpacity>
 
@@ -122,10 +120,10 @@ export function DocumentCapture({
           style={[styles.captureButton, styles.galleryButton]}
           onPress={() => pickImage(false)}
           disabled={loading}
-          activeOpacity={0.8}
+          activeOpacity={0.88}
         >
-          <ImageIcon size={20} color="#3B82F6" />
-          <Text style={styles.galleryButtonText}>Choose from Gallery</Text>
+          <ImageIcon size={18} color={riderTheme.colors.primary} />
+          <Text style={styles.galleryButtonText}>Gallery</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -134,7 +132,7 @@ export function DocumentCapture({
 
 const styles = StyleSheet.create({
   container: {
-    marginBottom: 24,
+    marginBottom: 22,
   },
   header: {
     flexDirection: 'row',
@@ -144,91 +142,87 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#111827',
+    color: riderTheme.colors.textPrimary,
   },
   required: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#EF4444',
+    color: riderTheme.colors.danger,
     marginLeft: 4,
   },
   description: {
     fontSize: 13,
-    color: '#6B7280',
-    marginBottom: 12,
+    color: riderTheme.colors.textSecondary,
+    marginBottom: 10,
     lineHeight: 18,
   },
   placeholder: {
-    backgroundColor: '#F9FAFB',
-    borderWidth: 2,
-    borderColor: '#E5E7EB',
+    backgroundColor: riderTheme.colors.surfaceMuted,
+    borderWidth: 1,
+    borderColor: riderTheme.colors.border,
     borderStyle: 'dashed',
-    borderRadius: 12,
-    padding: 32,
+    borderRadius: riderTheme.radius.md,
+    padding: 28,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 12,
+    marginBottom: 10,
   },
   placeholderText: {
-    fontSize: 14,
-    color: '#9CA3AF',
-    marginTop: 8,
+    fontSize: 13,
+    color: riderTheme.colors.textMuted,
+    marginTop: 7,
   },
   imagePreview: {
     position: 'relative',
-    marginBottom: 12,
+    marginBottom: 10,
   },
   previewImage: {
     width: '100%',
-    height: 200,
-    borderRadius: 12,
-    backgroundColor: '#F3F4F6',
+    height: 192,
+    borderRadius: riderTheme.radius.md,
+    backgroundColor: riderTheme.colors.surfaceMuted,
   },
   removeButton: {
     position: 'absolute',
     top: 8,
     right: 8,
-    backgroundColor: '#EF4444',
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    backgroundColor: riderTheme.colors.danger,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
     alignItems: 'center',
     justifyContent: 'center',
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
+    ...riderTheme.shadow.soft,
   },
   buttonRow: {
     flexDirection: 'row',
-    gap: 12,
+    gap: 10,
   },
   captureButton: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
+    gap: 6,
     paddingVertical: 12,
-    borderRadius: 12,
+    borderRadius: riderTheme.radius.md,
   },
   cameraButton: {
-    backgroundColor: '#3B82F6',
+    backgroundColor: riderTheme.colors.primary,
   },
   galleryButton: {
-    backgroundColor: '#FFFFFF',
-    borderWidth: 2,
-    borderColor: '#3B82F6',
+    backgroundColor: riderTheme.colors.surface,
+    borderWidth: 1,
+    borderColor: riderTheme.colors.border,
   },
   captureButtonText: {
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: '700',
     color: '#FFFFFF',
   },
   galleryButtonText: {
     fontSize: 14,
-    fontWeight: '600',
-    color: '#3B82F6',
+    fontWeight: '700',
+    color: riderTheme.colors.primary,
   },
 });

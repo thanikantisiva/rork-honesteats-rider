@@ -7,10 +7,11 @@ import React, { useState } from 'react';
 import { StyleSheet, Text, View, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, Stack } from 'expo-router';
-import { Clock, RefreshCw, Phone } from 'lucide-react-native';
+import { Clock3, RefreshCw, PhoneCall, BadgeCheck } from 'lucide-react-native';
 import { useThemedAlert } from '@/components/ThemedAlert';
 import { riderAuthAPI } from '@/lib/api';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { riderTheme } from '@/theme/riderTheme';
 
 export default function VerificationPendingScreen() {
   const router = useRouter();
@@ -64,7 +65,6 @@ export default function VerificationPendingScreen() {
         );
       }
     } catch (error: any) {
-      console.error('Check status error:', error);
       showAlert('Error', 'Failed to check status. Please try again.', undefined, 'error');
     } finally {
       setIsChecking(false);
@@ -76,44 +76,34 @@ export default function VerificationPendingScreen() {
       <Stack.Screen options={{ headerShown: false }} />
       <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
         <View style={styles.content}>
-          {/* Icon */}
-          <View style={styles.iconContainer}>
-            <Clock size={64} color="#F59E0B" strokeWidth={2} />
+          <View style={styles.heroCard}>
+            <View style={styles.iconWrap}>
+              <Clock3 size={52} color={riderTheme.colors.warning} strokeWidth={2} />
+            </View>
+            <Text style={styles.title}>Verification In Progress</Text>
+            <Text style={styles.message}>
+              We are reviewing your documents. Approval usually takes 24-48 hours.
+            </Text>
+            <View style={styles.statusPill}>
+              <BadgeCheck size={14} color={riderTheme.colors.info} />
+              <Text style={styles.statusPillText}>Profile under quality check</Text>
+            </View>
           </View>
 
-          {/* Title */}
-          <Text style={styles.title}>Application Under Review</Text>
-
-          {/* Message */}
-          <Text style={styles.message}>
-            We're verifying your documents. This usually takes 24-48 hours. We'll notify you once approved.
-          </Text>
-
-          {/* Info Card */}
           <View style={styles.infoCard}>
-            <Text style={styles.infoTitle}>What happens next?</Text>
-            <View style={styles.infoItem}>
-              <Text style={styles.infoBullet}>1.</Text>
-              <Text style={styles.infoText}>Our team reviews your documents</Text>
-            </View>
-            <View style={styles.infoItem}>
-              <Text style={styles.infoBullet}>2.</Text>
-              <Text style={styles.infoText}>You'll receive a notification</Text>
-            </View>
-            <View style={styles.infoItem}>
-              <Text style={styles.infoBullet}>3.</Text>
-              <Text style={styles.infoText}>Login and start delivering!</Text>
-            </View>
+            <Text style={styles.infoTitle}>What happens next</Text>
+            <Text style={styles.infoLine}>1. Document review by operations team</Text>
+            <Text style={styles.infoLine}>2. Approval notification sent to your phone</Text>
+            <Text style={styles.infoLine}>3. Login and start delivery shifts</Text>
           </View>
         </View>
 
-        {/* Action Buttons */}
         <View style={styles.footer}>
           <TouchableOpacity
             style={styles.checkButton}
             onPress={checkStatus}
             disabled={isChecking}
-            activeOpacity={0.8}
+            activeOpacity={0.88}
           >
             {isChecking ? (
               <ActivityIndicator color="#FFFFFF" />
@@ -135,10 +125,10 @@ export default function VerificationPendingScreen() {
                 'info'
               );
             }}
-            activeOpacity={0.8}
+            activeOpacity={0.88}
           >
-            <Phone size={20} color="#3B82F6" />
-            <Text style={styles.supportButtonText}>Need Help?</Text>
+            <PhoneCall size={18} color={riderTheme.colors.primary} />
+            <Text style={styles.supportButtonText}>Contact Support</Text>
           </TouchableOpacity>
         </View>
       </SafeAreaView>
@@ -151,76 +141,87 @@ export default function VerificationPendingScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F9FAFB',
+    backgroundColor: riderTheme.colors.background,
   },
   content: {
     flex: 1,
-    alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 32,
+    paddingHorizontal: 20,
   },
-  iconContainer: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    backgroundColor: '#FEF3C7',
+  heroCard: {
+    backgroundColor: riderTheme.colors.surface,
+    borderRadius: riderTheme.radius.xl,
+    borderWidth: 1,
+    borderColor: riderTheme.colors.border,
+    padding: 24,
+    alignItems: 'center',
+    ...riderTheme.shadow.card,
+  },
+  iconWrap: {
+    width: 104,
+    height: 104,
+    borderRadius: 52,
+    backgroundColor: riderTheme.colors.warningSoft,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 24,
+    marginBottom: 16,
   },
   title: {
     fontSize: 28,
     fontWeight: '700',
-    color: '#111827',
-    marginBottom: 12,
+    color: riderTheme.colors.textPrimary,
+    marginBottom: 10,
     textAlign: 'center',
   },
   message: {
-    fontSize: 16,
-    color: '#6B7280',
+    fontSize: 15,
+    color: riderTheme.colors.textSecondary,
     textAlign: 'center',
-    lineHeight: 24,
-    marginBottom: 32,
+    lineHeight: 22,
+  },
+  statusPill: {
+    marginTop: 14,
+    backgroundColor: riderTheme.colors.infoSoft,
+    borderRadius: riderTheme.radius.full,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  statusPillText: {
+    color: riderTheme.colors.info,
+    fontWeight: '600',
+    fontSize: 12,
   },
   infoCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 20,
-    width: '100%',
+    marginTop: 14,
+    backgroundColor: riderTheme.colors.surface,
+    borderRadius: riderTheme.radius.lg,
+    padding: 18,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: riderTheme.colors.border,
   },
   infoTitle: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#111827',
-    marginBottom: 16,
+    color: riderTheme.colors.textPrimary,
+    marginBottom: 10,
   },
-  infoItem: {
-    flexDirection: 'row',
-    marginBottom: 12,
-    gap: 12,
-  },
-  infoBullet: {
+  infoLine: {
     fontSize: 14,
-    fontWeight: '700',
-    color: '#3B82F6',
-    width: 20,
-  },
-  infoText: {
-    fontSize: 14,
-    color: '#6B7280',
-    flex: 1,
+    color: riderTheme.colors.textSecondary,
+    marginBottom: 8,
     lineHeight: 20,
   },
   footer: {
-    padding: 24,
-    gap: 12,
+    padding: 20,
+    gap: 10,
   },
   checkButton: {
-    backgroundColor: '#3B82F6',
-    paddingVertical: 16,
-    borderRadius: 12,
+    backgroundColor: riderTheme.colors.primary,
+    paddingVertical: 15,
+    borderRadius: riderTheme.radius.md,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -232,19 +233,19 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
   },
   supportButton: {
-    backgroundColor: '#FFFFFF',
-    paddingVertical: 16,
-    borderRadius: 12,
+    backgroundColor: riderTheme.colors.surface,
+    paddingVertical: 15,
+    borderRadius: riderTheme.radius.md,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    borderWidth: 2,
-    borderColor: '#3B82F6',
+    borderWidth: 1,
+    borderColor: riderTheme.colors.border,
   },
   supportButtonText: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '700',
-    color: '#3B82F6',
+    color: riderTheme.colors.primary,
   },
 });

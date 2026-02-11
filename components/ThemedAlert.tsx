@@ -1,11 +1,11 @@
 /**
  * Themed Alert Component for Rider App
- * Uses blue theme instead of red
  */
 
 import React from 'react';
 import { Modal, View, Text, TouchableOpacity, StyleSheet, Pressable } from 'react-native';
-import { AlertCircle, CheckCircle, AlertTriangle, CookingPot } from 'lucide-react-native';
+import { AlertCircle, CheckCircle, AlertTriangle, Info } from 'lucide-react-native';
+import { riderTheme } from '@/theme/riderTheme';
 
 export type AlertType = 'success' | 'error' | 'info' | 'warning';
 
@@ -28,32 +28,32 @@ export function ThemedAlert({
   title,
   message,
   buttons = [{ text: 'OK', style: 'default' }],
-  onClose
+  onClose,
 }: ThemedAlertProps) {
   const config = {
     success: {
       icon: CheckCircle,
-      iconColor: '#10B981',
-      bgColor: '#D1FAE5',
-      titleColor: '#10B981',
+      iconColor: riderTheme.colors.success,
+      bgColor: riderTheme.colors.successSoft,
+      titleColor: riderTheme.colors.success,
     },
     error: {
       icon: AlertCircle,
-      iconColor: '#EF4444',
-      bgColor: '#FEE2E2',
-      titleColor: '#EF4444',
+      iconColor: riderTheme.colors.danger,
+      bgColor: riderTheme.colors.dangerSoft,
+      titleColor: riderTheme.colors.danger,
     },
     warning: {
       icon: AlertTriangle,
-      iconColor: '#F59E0B',
-      bgColor: '#FEF3C7',
-      titleColor: '#F59E0B',
+      iconColor: riderTheme.colors.warning,
+      bgColor: riderTheme.colors.warningSoft,
+      titleColor: riderTheme.colors.warning,
     },
     info: {
-      icon: CookingPot,
-      iconColor: '#3B82F6',
-      bgColor: '#DBEAFE',
-      titleColor: '#3B82F6',
+      icon: Info,
+      iconColor: riderTheme.colors.info,
+      bgColor: riderTheme.colors.infoSoft,
+      titleColor: riderTheme.colors.info,
     },
   };
 
@@ -73,7 +73,7 @@ export function ThemedAlert({
       <Pressable style={styles.overlay} onPress={handleClose}>
         <Pressable style={styles.container} onPress={(e) => e.stopPropagation()}>
           <View style={[styles.iconContainer, { backgroundColor: bgColor }]}>
-            <Icon size={32} color={iconColor} strokeWidth={2.5} />
+            <Icon size={30} color={iconColor} strokeWidth={2.5} />
           </View>
 
           <Text style={[styles.title, { color: titleColor }]}>{title}</Text>
@@ -93,10 +93,10 @@ export function ThemedAlert({
                     isPrimary && styles.buttonPrimary,
                     isDestructive && styles.buttonDestructive,
                     isCancel && styles.buttonSecondary,
-                    buttons.length === 1 && { flex: 1 }
+                    buttons.length === 1 && { flex: 1 },
                   ]}
                   onPress={() => handleButtonPress(button)}
-                  activeOpacity={0.8}
+                  activeOpacity={0.88}
                 >
                   <Text
                     style={[
@@ -121,81 +121,77 @@ export function ThemedAlert({
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    backgroundColor: riderTheme.colors.overlay,
     justifyContent: 'center',
     alignItems: 'center',
     padding: 24,
   },
   container: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
+    backgroundColor: riderTheme.colors.surface,
+    borderRadius: riderTheme.radius.xl,
     padding: 24,
     width: '100%',
     maxWidth: 400,
     alignItems: 'center',
-    elevation: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
+    borderWidth: 1,
+    borderColor: riderTheme.colors.border,
+    ...riderTheme.shadow.card,
   },
   iconContainer: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
+    width: 62,
+    height: 62,
+    borderRadius: 31,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 16,
+    marginBottom: 14,
   },
   title: {
     fontSize: 20,
     fontWeight: '700',
-    marginBottom: 12,
+    marginBottom: 10,
     textAlign: 'center',
   },
   message: {
     fontSize: 14,
-    color: '#6B7280',
+    color: riderTheme.colors.textSecondary,
     textAlign: 'center',
-    marginBottom: 24,
+    marginBottom: 20,
     lineHeight: 20,
   },
   buttons: {
     flexDirection: 'row',
-    gap: 12,
+    gap: 10,
     width: '100%',
   },
   button: {
     flex: 1,
     paddingVertical: 12,
-    borderRadius: 12,
+    borderRadius: riderTheme.radius.md,
     alignItems: 'center',
   },
   buttonPrimary: {
-    backgroundColor: '#3B82F6',  // Blue theme for rider app
+    backgroundColor: riderTheme.colors.primary,
   },
   buttonDestructive: {
-    backgroundColor: '#DC2626',
+    backgroundColor: riderTheme.colors.danger,
   },
   buttonSecondary: {
-    borderWidth: 2,
-    borderColor: '#E5E7EB',
+    borderWidth: 1,
+    borderColor: riderTheme.colors.border,
     backgroundColor: 'transparent',
   },
   buttonText: {
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: '700',
   },
   buttonTextPrimary: {
     color: '#FFFFFF',
-    fontWeight: '700',
   },
   buttonTextDestructive: {
     color: '#FFFFFF',
-    fontWeight: '700',
   },
   buttonTextSecondary: {
-    color: '#6B7280',
+    color: riderTheme.colors.textSecondary,
   },
 });
 

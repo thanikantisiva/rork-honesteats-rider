@@ -1,6 +1,6 @@
 /**
  * Earnings Screen
- * Shows rider's earnings and delivery history
+ * Modern dashboard showing rider earnings and delivery history
  */
 
 import React, { useState, useEffect } from 'react';
@@ -14,11 +14,12 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { Stack } from 'expo-router';
-import { IndianRupee, TrendingUp, Package, Clock } from 'lucide-react-native';
+import { IndianRupee, TrendingUp, Package, Clock, Calendar } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '@/contexts/AuthContext';
 import { riderEarningsAPI } from '@/lib/api';
 import { EarningsSummary } from '@/types';
+import { riderTheme } from '@/theme/riderTheme';
 
 type Period = 'today' | 'week' | 'month';
 
@@ -55,58 +56,75 @@ export default function EarningsScreen() {
       <View style={styles.container}>
         {/* Header */}
         <View style={[styles.header, { paddingTop: insets.top + 16 }]}>
-          <Text style={styles.headerTitle}>Earnings</Text>
+          <View>
+            <Text style={styles.headerTitle}>Earnings</Text>
+            <Text style={styles.headerSubtitle}>Track your delivery income</Text>
+          </View>
         </View>
 
         {/* Period Selector */}
-        <View style={styles.periodSelector}>
-          {(['today', 'week', 'month'] as Period[]).map((period) => (
-            <TouchableOpacity
-              key={period}
-              style={[styles.periodButton, selectedPeriod === period && styles.periodButtonActive]}
-              onPress={() => setSelectedPeriod(period)}
-              activeOpacity={0.7}
-            >
-              <Text style={[styles.periodText, selectedPeriod === period && styles.periodTextActive]}>
-                {period.charAt(0).toUpperCase() + period.slice(1)}
-              </Text>
-            </TouchableOpacity>
-          ))}
+        <View style={styles.periodContainer}>
+          <View style={styles.periodSelector}>
+            {(['today', 'week', 'month'] as Period[]).map((period) => (
+              <TouchableOpacity
+                key={period}
+                style={[styles.periodButton, selectedPeriod === period && styles.periodButtonActive]}
+                onPress={() => setSelectedPeriod(period)}
+                activeOpacity={0.85}
+              >
+                <Text style={[styles.periodText, selectedPeriod === period && styles.periodTextActive]}>
+                  {period === 'today' ? 'Today' : period === 'week' ? 'This Week' : 'This Month'}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
         </View>
 
+        {/* Content */}
         <ScrollView
           style={styles.content}
+          contentContainerStyle={styles.contentContainer}
           showsVerticalScrollIndicator={false}
           refreshControl={
             <RefreshControl
               refreshing={isLoading}
               onRefresh={fetchEarnings}
-              tintColor="#3B82F6"
-              colors={['#3B82F6']}
+              tintColor={riderTheme.colors.primary}
+              colors={[riderTheme.colors.primary]}
             />
           }
         >
           {isLoading && !earnings ? (
             <View style={styles.loadingContainer}>
-              <ActivityIndicator size="large" color="#3B82F6" />
+              <ActivityIndicator size="large" color={riderTheme.colors.primary} />
+              <Text style={styles.loadingText}>Loading earnings...</Text>
             </View>
           ) : earnings ? (
             <>
-              {/* Earnings Summary Card */}
-              <View style={styles.summaryCard}>
-                <View style={styles.summaryHeader}>
-                  <IndianRupee size={32} color="#10B981" />
-                  <Text style={styles.summaryTitle}>Total Earnings</Text>
+              {/* Total Earnings Card */}
+              <View style={styles.totalCard}>
+                <View style={styles.totalHeader}>
+                  <View style={styles.totalIconWrap}>
+                    <IndianRupee size={22} color={riderTheme.colors.success} strokeWidth={2.5} />
+                  </View>
+                  <Text style={styles.totalLabel}>Total Earnings</Text>
                 </View>
-                <Text style={styles.summaryAmount}>₹{(earnings.totalEarnings || 0).toFixed(2)}</Text>
-                <View style={styles.summaryStats}>
-                  <View style={styles.stat}>
-                    <Package size={18} color="#6B7280" />
+                <Text style={styles.totalAmount}>₹{(earnings.totalEarnings || 0).toFixed(2)}</Text>
+                
+                {/* Stats Grid */}
+                <View style={styles.statsGrid}>
+                  <View style={styles.statCard}>
+                    <View style={styles.statIcon}>
+                      <Package size={18} color={riderTheme.colors.primary} strokeWidth={2.5} />
+                    </View>
                     <Text style={styles.statValue}>{earnings.totalDeliveries || 0}</Text>
                     <Text style={styles.statLabel}>Deliveries</Text>
                   </View>
-                  <View style={styles.stat}>
-                    <TrendingUp size={18} color="#6B7280" />
+                  
+                  <View style={styles.statCard}>
+                    <View style={styles.statIcon}>
+                      <TrendingUp size={18} color={riderTheme.colors.primary} strokeWidth={2.5} />
+                    </View>
                     <Text style={styles.statValue}>₹{(earnings.totalTips || 0).toFixed(0)}</Text>
                     <Text style={styles.statLabel}>Tips</Text>
                   </View>
@@ -115,17 +133,28 @@ export default function EarningsScreen() {
 
               {/* Daily Breakdown */}
               {earnings.dailyBreakdown && earnings.dailyBreakdown.length > 0 && (
-                <View style={styles.section}>
-                  <Text style={styles.sectionTitle}>Daily Breakdown</Text>
+                <View style={styles.breakdownSection}>
+                  <View style={styles.sectionHeader}>
+                    <Calendar size={18} color={riderTheme.colors.textSecondary} strokeWidth={2.5} />
+                    <Text style={styles.sectionTitle}>Daily Breakdown</Text>
+                  </View>
+                  
                   {earnings.dailyBreakdown.map((day, index) => (
                     <View key={index} style={styles.dayCard}>
                       <View style={styles.dayHeader}>
                         <Text style={styles.dayDate}>{day.date}</Text>
                         <Text style={styles.dayAmount}>₹{(day.totalEarnings || 0).toFixed(2)}</Text>
                       </View>
-                      <Text style={styles.dayStats}>
-                        {day.totalDeliveries || 0} deliveries • {day.onlineTimeMinutes || 0} min online
-                      </Text>
+                      <View style={styles.dayMetrics}>
+                        <View style={styles.dayMetric}>
+                          <Package size={14} color={riderTheme.colors.textMuted} strokeWidth={2} />
+                          <Text style={styles.dayMetricText}>{day.totalDeliveries || 0} deliveries</Text>
+                        </View>
+                        <View style={styles.dayMetric}>
+                          <Clock size={14} color={riderTheme.colors.textMuted} strokeWidth={2} />
+                          <Text style={styles.dayMetricText}>{day.onlineTimeMinutes || 0} min</Text>
+                        </View>
+                      </View>
                     </View>
                   ))}
                 </View>
@@ -133,9 +162,13 @@ export default function EarningsScreen() {
             </>
           ) : (
             <View style={styles.emptyState}>
-              <TrendingUp size={64} color="#D1D5DB" />
+              <View style={styles.emptyIconWrap}>
+                <TrendingUp size={52} color={riderTheme.colors.textMuted} strokeWidth={2} />
+              </View>
               <Text style={styles.emptyTitle}>No Earnings Yet</Text>
-              <Text style={styles.emptyText}>Complete deliveries to start earning</Text>
+              <Text style={styles.emptyText}>
+                Complete deliveries to start earning and see your stats here.
+              </Text>
             </View>
           )}
         </ScrollView>
@@ -147,271 +180,219 @@ export default function EarningsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F9FAFB',
+    backgroundColor: riderTheme.colors.background,
   },
   header: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: riderTheme.colors.surface,
     paddingHorizontal: 20,
-    paddingBottom: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
+    paddingBottom: 20,
+    ...riderTheme.shadow.medium,
   },
   headerTitle: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#111827',
+    fontSize: 28,
+    fontWeight: '800',
+    color: riderTheme.colors.textPrimary,
+    letterSpacing: 0.3,
+    marginBottom: 2,
+  },
+  headerSubtitle: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: riderTheme.colors.textSecondary,
+  },
+  periodContainer: {
+    backgroundColor: riderTheme.colors.surface,
+    paddingHorizontal: 20,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: riderTheme.colors.borderLight,
   },
   periodSelector: {
     flexDirection: 'row',
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    gap: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
+    backgroundColor: riderTheme.colors.surfaceMuted,
+    borderRadius: riderTheme.radius.lg,
+    padding: 4,
+    gap: 4,
   },
   periodButton: {
     flex: 1,
-    paddingVertical: 10,
-    borderRadius: 10,
-    backgroundColor: '#F3F4F6',
+    paddingVertical: 12,
     alignItems: 'center',
+    borderRadius: riderTheme.radius.md,
   },
   periodButtonActive: {
-    backgroundColor: '#3B82F6',
+    backgroundColor: riderTheme.colors.primary,
+    ...riderTheme.shadow.small,
   },
   periodText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#6B7280',
+    fontSize: 13,
+    fontWeight: '700',
+    color: riderTheme.colors.textSecondary,
   },
   periodTextActive: {
-    color: '#FFFFFF',
+    color: riderTheme.colors.textInverse,
   },
   content: {
     flex: 1,
   },
+  contentContainer: {
+    padding: 20,
+  },
   loadingContainer: {
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 80,
+    paddingVertical: 100,
   },
-  summaryCard: {
-    backgroundColor: '#FFFFFF',
-    margin: 16,
-    padding: 24,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    alignItems: 'center',
-  },
-  summaryHeader: {
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 16,
-  },
-  summaryTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#6B7280',
-  },
-  summaryAmount: {
-    fontSize: 48,
-    fontWeight: '700',
-    color: '#111827',
-    marginBottom: 24,
-  },
-  summaryStats: {
-    flexDirection: 'row',
-    gap: 32,
-  },
-  stat: {
-    alignItems: 'center',
-    gap: 6,
-  },
-  statValue: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#111827',
-  },
-  statLabel: {
-    fontSize: 12,
-    color: '#9CA3AF',
+  loadingText: {
+    fontSize: 14,
     fontWeight: '500',
-  },
-  section: {
-    padding: 16,
-  },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#111827',
-    marginBottom: 12,
-  },
-  dayCard: {
-    backgroundColor: '#FFFFFF',
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 8,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-  },
-  dayHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 6,
-  },
-  dayDate: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#111827',
-  },
-  dayAmount: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#10B981',
-  },
-  dayStats: {
-    fontSize: 12,
-    color: '#9CA3AF',
-  },
-  emptyState: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 80,
-    paddingHorizontal: 32,
-  },
-  emptyTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#111827',
+    color: riderTheme.colors.textSecondary,
     marginTop: 16,
-    marginBottom: 8,
   },
-  emptyText: {
-    fontSize: 14,
-    color: '#6B7280',
-    textAlign: 'center',
-  },
-  footer: {
-    backgroundColor: '#FFFFFF',
-    padding: 16,
-    borderTopWidth: 1,
-    borderTopColor: '#E5E7EB',
-  },
-  primaryButton: {
-    backgroundColor: '#3B82F6',
-    paddingVertical: 16,
-    borderRadius: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-  },
-  deliverButton: {
-    backgroundColor: '#10B981',
-  },
-  primaryButtonDisabled: {
-    opacity: 0.6,
-  },
-  primaryButtonText: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
-  card: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 16,
+  totalCard: {
+    backgroundColor: riderTheme.colors.surface,
+    borderRadius: riderTheme.radius.lg,
+    padding: 18,
+    marginBottom: 16,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: riderTheme.colors.borderLight,
+    ...riderTheme.shadow.medium,
   },
-  cardHeader: {
+  totalHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    marginBottom: 8,
-  },
-  cardTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#111827',
-  },
-  cardText: {
-    fontSize: 14,
-    color: '#6B7280',
-    lineHeight: 20,
+    gap: 10,
     marginBottom: 12,
   },
-  cardActions: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  actionButton: {
-    flexDirection: 'row',
+  totalIconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: riderTheme.radius.md,
+    backgroundColor: riderTheme.colors.successSoft,
     alignItems: 'center',
-    gap: 6,
-    backgroundColor: '#EFF6FF',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#3B82F6',
-  },
-  actionButtonText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#3B82F6',
-  },
-  itemRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 8,
-  },
-  itemName: {
-    fontSize: 14,
-    color: '#111827',
-    flex: 1,
-  },
-  itemPrice: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#111827',
-  },
-  divider: {
-    height: 1,
-    backgroundColor: '#E5E7EB',
-    marginVertical: 12,
-  },
-  totalRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    justifyContent: 'center',
   },
   totalLabel: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#111827',
+    color: riderTheme.colors.textSecondary,
   },
-  totalValue: {
-    fontSize: 16,
+  totalAmount: {
+    fontSize: 32,
+    fontWeight: '800',
+    color: riderTheme.colors.textPrimary,
+    marginBottom: 14,
+    letterSpacing: 0.3,
+  },
+  statsGrid: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  statCard: {
+    flex: 1,
+    backgroundColor: riderTheme.colors.surfaceMuted,
+    borderRadius: riderTheme.radius.md,
+    padding: 12,
+    alignItems: 'center',
+    gap: 6,
+  },
+  statIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: riderTheme.radius.sm,
+    backgroundColor: riderTheme.colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 2,
+  },
+  statValue: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: riderTheme.colors.textPrimary,
+  },
+  statLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: riderTheme.colors.textSecondary,
+  },
+  breakdownSection: {
+    marginTop: 4,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 14,
+  },
+  sectionTitle: {
+    fontSize: 18,
     fontWeight: '700',
-    color: '#10B981',
+    color: riderTheme.colors.textPrimary,
   },
-  otpLabel: {
-    fontSize: 14,
-    color: '#6B7280',
-    marginBottom: 12,
+  dayCard: {
+    backgroundColor: riderTheme.colors.surface,
+    borderRadius: riderTheme.radius.lg,
+    padding: 16,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: riderTheme.colors.borderLight,
+    ...riderTheme.shadow.small,
   },
-  otpInput: {
-    backgroundColor: '#F9FAFB',
-    borderWidth: 2,
-    borderColor: '#3B82F6',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 16,
-    fontSize: 24,
+  dayHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  dayDate: {
+    fontSize: 15,
     fontWeight: '700',
+    color: riderTheme.colors.textPrimary,
+  },
+  dayAmount: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: riderTheme.colors.success,
+  },
+  dayMetrics: {
+    flexDirection: 'row',
+    gap: 16,
+  },
+  dayMetric: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  dayMetricText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: riderTheme.colors.textSecondary,
+  },
+  emptyState: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 100,
+    paddingHorizontal: 40,
+  },
+  emptyIconWrap: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: riderTheme.colors.surfaceMuted,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 24,
+  },
+  emptyTitle: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: riderTheme.colors.textPrimary,
+    marginBottom: 10,
+  },
+  emptyText: {
+    fontSize: 15,
+    color: riderTheme.colors.textSecondary,
     textAlign: 'center',
-    letterSpacing: 8,
+    lineHeight: 22,
   },
 });

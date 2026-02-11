@@ -1,11 +1,12 @@
 /**
  * Signup Stepper Component
- * Shows progress through multi-step signup form
+ * Modern segmented progress indicator
  */
 
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { Check } from 'lucide-react-native';
+import { riderTheme } from '@/theme/riderTheme';
 
 interface SignupStepperProps {
   currentStep: number;
@@ -15,123 +16,143 @@ interface SignupStepperProps {
 export function SignupStepper({ currentStep, steps }: SignupStepperProps) {
   return (
     <View style={styles.container}>
-      {steps.map((step, index) => {
-        const stepNumber = index + 1;
-        const isActive = stepNumber === currentStep;
-        const isCompleted = stepNumber < currentStep;
+      {/* Segmented Progress Bar */}
+      <View style={styles.segmentsContainer}>
+        {steps.map((step, index) => {
+          const stepNumber = index + 1;
+          const isActive = stepNumber === currentStep;
+          const isCompleted = stepNumber < currentStep;
+          const isLast = index === steps.length - 1;
 
-        return (
-          <View key={index} style={styles.stepContainer}>
-            <View style={styles.stepIndicator}>
-              <View
-                style={[
-                  styles.stepCircle,
-                  isActive && styles.stepCircleActive,
-                  isCompleted && styles.stepCircleCompleted,
-                ]}
-              >
-                {isCompleted ? (
-                  <Check size={16} color="#FFFFFF" strokeWidth={3} />
-                ) : (
-                  <Text
-                    style={[
-                      styles.stepNumber,
-                      isActive && styles.stepNumberActive,
-                    ]}
-                  >
-                    {stepNumber}
-                  </Text>
-                )}
-              </View>
-              {index < steps.length - 1 && (
+          return (
+            <React.Fragment key={index}>
+              <View style={styles.segmentWrapper}>
+                {/* Segment Bar */}
                 <View
                   style={[
-                    styles.stepLine,
-                    isCompleted && styles.stepLineCompleted,
+                    styles.segment,
+                    isActive && styles.segmentActive,
+                    isCompleted && styles.segmentCompleted,
+                  ]}
+                >
+                  {/* Check icon for completed */}
+                  {isCompleted && (
+                    <View style={styles.checkBadge}>
+                      <Check size={10} color="#FFFFFF" strokeWidth={3} />
+                    </View>
+                  )}
+                  {/* Step number for active */}
+                  {isActive && (
+                    <Text style={styles.activeStepNumber}>{stepNumber}</Text>
+                  )}
+                </View>
+                
+                {/* Step Label */}
+                <Text
+                  style={[
+                    styles.stepLabel,
+                    isActive && styles.stepLabelActive,
+                    isCompleted && styles.stepLabelCompleted,
+                  ]}
+                  numberOfLines={1}
+                >
+                  {step}
+                </Text>
+              </View>
+              
+              {/* Connector Line */}
+              {!isLast && (
+                <View
+                  style={[
+                    styles.connector,
+                    (isCompleted || (isActive && index < currentStep - 1)) && styles.connectorActive,
                   ]}
                 />
               )}
-            </View>
-            <Text
-              style={[
-                styles.stepLabel,
-                isActive && styles.stepLabelActive,
-                isCompleted && styles.stepLabelCompleted,
-              ]}
-            >
-              {step}
-            </Text>
-          </View>
-        );
-      })}
+            </React.Fragment>
+          );
+        })}
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 32,
-    paddingHorizontal: 16,
+    paddingHorizontal: 20,
+    paddingVertical: 18,
   },
-  stepContainer: {
+  segmentsContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  segmentWrapper: {
     flex: 1,
     alignItems: 'center',
   },
-  stepIndicator: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  segment: {
     width: '100%',
+    height: 8,
+    backgroundColor: riderTheme.colors.surfaceMuted,
+    borderRadius: 4,
+    borderWidth: 2,
+    borderColor: riderTheme.colors.border,
     marginBottom: 8,
-  },
-  stepCircle: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: '#F3F4F6',
+    position: 'relative',
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: '#E5E7EB',
   },
-  stepCircleActive: {
-    backgroundColor: '#3B82F6',
-    borderColor: '#3B82F6',
+  segmentActive: {
+    backgroundColor: riderTheme.colors.primary,
+    borderColor: riderTheme.colors.primary,
+    height: 32,
+    borderRadius: 16,
+    ...riderTheme.shadow.medium,
   },
-  stepCircleCompleted: {
-    backgroundColor: '#10B981',
-    borderColor: '#10B981',
+  segmentCompleted: {
+    backgroundColor: riderTheme.colors.success,
+    borderColor: riderTheme.colors.success,
+    height: 24,
+    borderRadius: 12,
   },
-  stepNumber: {
+  checkBadge: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  activeStepNumber: {
     fontSize: 14,
-    fontWeight: '700',
-    color: '#9CA3AF',
-  },
-  stepNumberActive: {
+    fontWeight: '800',
     color: '#FFFFFF',
   },
-  stepLine: {
-    flex: 1,
+  connector: {
+    width: 8,
     height: 2,
-    backgroundColor: '#E5E7EB',
-    marginLeft: 4,
+    backgroundColor: riderTheme.colors.border,
+    marginHorizontal: 2,
+    marginBottom: 8,
   },
-  stepLineCompleted: {
-    backgroundColor: '#10B981',
+  connectorActive: {
+    backgroundColor: riderTheme.colors.success,
   },
   stepLabel: {
-    fontSize: 11,
-    color: '#9CA3AF',
+    fontSize: 10,
+    color: riderTheme.colors.textMuted,
     textAlign: 'center',
-    fontWeight: '500',
+    fontWeight: '600',
+    paddingHorizontal: 2,
   },
   stepLabelActive: {
-    color: '#3B82F6',
-    fontWeight: '700',
+    color: riderTheme.colors.primary,
+    fontWeight: '800',
+    fontSize: 11,
   },
   stepLabelCompleted: {
-    color: '#10B981',
-    fontWeight: '600',
+    color: riderTheme.colors.success,
+    fontWeight: '700',
   },
 });

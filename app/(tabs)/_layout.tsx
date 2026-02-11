@@ -5,27 +5,30 @@
 import { Tabs } from 'expo-router';
 import { Package, IndianRupee, User } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Platform } from 'react-native';
+import { riderTheme } from '@/theme/riderTheme';
 
 export default function TabLayout() {
   const insets = useSafeAreaInsets();
-  
+
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: '#3B82F6',
-        tabBarInactiveTintColor: '#9CA3AF',
+        headerShown: false,
+        sceneStyle: { backgroundColor: riderTheme.colors.background },
+        tabBarActiveTintColor: riderTheme.colors.primary,
+        tabBarInactiveTintColor: riderTheme.colors.textMuted,
         tabBarStyle: {
-          backgroundColor: '#FFFFFF',
+          backgroundColor: riderTheme.colors.surface,
           borderTopWidth: 1,
-          borderTopColor: '#E5E7EB',
-          height: 60 + insets.bottom,
+          borderTopColor: riderTheme.colors.border,
+          height: 62 + insets.bottom,
           paddingBottom: insets.bottom + 8,
           paddingTop: 8,
+          paddingHorizontal: 8,
         },
         tabBarLabelStyle: {
           fontSize: 12,
-          fontWeight: '600',
+          fontWeight: '700',
         },
       }}
     >
