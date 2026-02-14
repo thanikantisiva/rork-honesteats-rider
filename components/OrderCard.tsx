@@ -5,7 +5,7 @@
 
 import React, { useState } from 'react';
 import { StyleSheet, Text, View, TouchableOpacity, TextInput, Alert, Modal } from 'react-native';
-import { MapPin, Home, Package, IndianRupee, Navigation, CheckCircle, Truck, Lock } from 'lucide-react-native';
+import { MapPin, Home, Package, IndianRupee, Navigation, CheckCircle, Truck, Lock, ArrowRight } from 'lucide-react-native';
 import { RiderOrder } from '@/types';
 import { StatusBadge } from './StatusBadge';
 import { formatDistance, calculateDistance } from '@/utils/distance';
