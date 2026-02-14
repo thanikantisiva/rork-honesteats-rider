@@ -9,10 +9,10 @@ import auth, { FirebaseAuthTypes } from '@react-native-firebase/auth';
 const TEST_PHONE_LAST10 = new Set([
   '9999999999',
   '9561714569',
-  '1916533972',
+  '9165339732',
   '9380065803',
 ]);
-const TEST_OTP = '123456';
+const TEST_OTP = '1234';
 
 // Mock confirmation object for test phone
 class MockConfirmation {
