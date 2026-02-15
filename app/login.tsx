@@ -19,10 +19,8 @@ import { useRouter, Stack } from 'expo-router';
 import { Phone, ArrowRight } from 'lucide-react-native';
 import { useThemedAlert } from '@/components/ThemedAlert';
 import { useAuth } from '@/contexts/AuthContext';
-import { riderAuthAPI, userAPI } from '@/lib/api';
-import { sendFirebaseOTP, verifyFirebaseOTP } from '@/lib/firebase-auth';
+import { riderAuthAPI, userAPI, authOTPAPI } from '@/lib/api';
 import { requestNotificationPermission, getFCMToken } from '@/services/firebase-messaging';
-import type { FirebaseAuthTypes } from '@react-native-firebase/auth';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export default function LoginScreen() {
@@ -31,7 +29,7 @@ export default function LoginScreen() {
   const { login } = useAuth();
   const [phone, setPhone] = useState('');
   const [otp, setOtp] = useState('');
-  const [confirm, setConfirm] = useState<FirebaseAuthTypes.ConfirmationResult | null>(null);
+  const [otpSent, setOtpSent] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [riderData, setRiderData] = useState<{ riderId: string; phone: string; name: string } | null>(null);
 
@@ -44,6 +42,7 @@ export default function LoginScreen() {
     setIsLoading(true);
     try {
       const phoneNumber = `+91${phone}`;
+      const otpPhone = phone;
       
       // Check if rider can login (send with +91 prefix)
       const statusResponse = await riderAuthAPI.checkLogin(phoneNumber);
@@ -96,11 +95,13 @@ export default function LoginScreen() {
 
       // Status is APPROVED - proceed with OTP
       console.log('📤 Sending OTP to rider:', phoneNumber);
-      const result = await sendFirebaseOTP(phoneNumber);
-      
-      if (result.success && result.confirmation) {
+      console.log('📤 Sending OTP via backend:', { phone: otpPhone });
+      const result = await authOTPAPI.sendOtp(otpPhone);
+      console.log('✅ Send OTP response:', result);
+
+      if (result.success) {
         console.log('✅ OTP sent successfully');
-        setConfirm(result.confirmation);
+        setOtpSent(true);
         
         // Store rider data temporarily (will be saved to context after OTP verification)
         setRiderData({
@@ -109,15 +110,10 @@ export default function LoginScreen() {
           name: statusResponse.name!,
         });
 
-        // Show test message for test numbers
-        if (result.testMessage) {
-          showAlert('OTP Sent (Test Mode)', result.testMessage, undefined, 'info');
-        } else {
-          showAlert('OTP Sent', 'Please enter the 6-digit OTP sent to your phone', undefined, 'success');
-        }
+        showAlert('OTP Sent', result.message || 'Please enter the OTP sent to your phone', undefined, 'success');
       } else {
-        console.error('❌ Failed to send OTP:', result.error);
-        showAlert('Error', result.error || 'Failed to send OTP. Please try again.', undefined, 'error');
+        console.error('❌ Failed to send OTP:', result.message || result.error);
+        showAlert('Error', result.message || result.error || 'Failed to send OTP. Please try again.', undefined, 'error');
       }
     } catch (error: any) {
       console.error('Send OTP error:', error);
@@ -128,12 +124,12 @@ export default function LoginScreen() {
   };
 
   const handleVerifyOTP = async () => {
-    if (!otp || otp.length !== 6) {
-      showAlert('Invalid OTP', 'Please enter the 6-digit OTP', undefined, 'warning');
+    if (!otp || otp.length !== 4) {
+      showAlert('Invalid OTP', 'Please enter the 4-digit OTP', undefined, 'warning');
       return;
     }
 
-    if (!confirm) {
+    if (!otpSent) {
       showAlert('Error', 'Please request OTP first', undefined, 'error');
       return;
     }
@@ -145,9 +141,11 @@ export default function LoginScreen() {
 
     setIsLoading(true);
     try {
-      console.log('🔐 Verifying OTP...');
-      const result = await verifyFirebaseOTP(confirm, otp);
-      
+      const otpPhone = phone;
+      console.log('🔐 Verifying OTP via backend:', { phone: otpPhone, codeLength: otp.length });
+      const result = await authOTPAPI.verifyOtp(otpPhone, otp);
+      console.log('✅ Verify OTP response:', result);
+
       if (!result.success) {
         showAlert('Verification Failed', result.error || 'Invalid OTP', undefined, 'error');
         setIsLoading(false);
@@ -227,7 +225,7 @@ export default function LoginScreen() {
               <Text style={styles.subtitle}>Enter your registered mobile number</Text>
             </View>
 
-            {!confirm ? (
+            {!otpSent ? (
               <View style={styles.form}>
                 <View style={styles.inputGroup}>
                   <Text style={styles.label}>Mobile Number</Text>
@@ -267,12 +265,12 @@ export default function LoginScreen() {
                   <Text style={styles.label}>Enter OTP</Text>
                   <TextInput
                     style={styles.otpInput}
-                    placeholder="123456"
+                    placeholder="1234"
                     placeholderTextColor="#9CA3AF"
                     value={otp}
                     onChangeText={(text) => setOtp(text.replace(/[^0-9]/g, ''))}
                     keyboardType="number-pad"
-                    maxLength={6}
+                    maxLength={4}
                     editable={!isLoading}
                   />
                 </View>
@@ -292,7 +290,7 @@ export default function LoginScreen() {
 
                 <TouchableOpacity
                   style={styles.resendButton}
-                  onPress={() => setConfirm(null)}
+                  onPress={() => setOtpSent(false)}
                   disabled={isLoading}
                 >
                   <Text style={styles.resendButtonText}>Change Number</Text>

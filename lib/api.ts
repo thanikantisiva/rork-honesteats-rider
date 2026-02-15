@@ -64,17 +64,19 @@ class APIClient {
     return this.request<T>(endpoint, { method: 'GET' });
   }
 
-  async post<T>(endpoint: string, body: any): Promise<T> {
+  async post<T>(endpoint: string, body: any, headers?: Record<string, string>): Promise<T> {
     return this.request<T>(endpoint, {
       method: 'POST',
       body: JSON.stringify(body),
+      headers,
     });
   }
 
-  async put<T>(endpoint: string, body: any): Promise<T> {
+  async put<T>(endpoint: string, body: any, headers?: Record<string, string>): Promise<T> {
     return this.request<T>(endpoint, {
       method: 'PUT',
       body: JSON.stringify(body),
+      headers,
     });
   }
 
@@ -84,6 +86,35 @@ class APIClient {
 }
 
 export const api = new APIClient(API_BASE_URL);
+
+const AUTH_API_KEY = 'dev-mobile-key-12345';
+
+const authHeaders = () => ({
+  'x-api-key': AUTH_API_KEY,
+});
+
+export const authOTPAPI = {
+  sendOtp: async (phone: string) => {
+    if (!AUTH_API_KEY) {
+      throw new Error('Missing API key for OTP service');
+    }
+    return api.post<{ success: boolean; message?: string; error?: string }>(
+      '/api/v1/auth/send-otp',
+      { phone },
+      authHeaders()
+    );
+  },
+  verifyOtp: async (phone: string, code: string) => {
+    if (!AUTH_API_KEY) {
+      throw new Error('Missing API key for OTP service');
+    }
+    return api.post<{ success: boolean; idToken?: string; userId?: string; isNewUser?: boolean; error?: string }>(
+      '/api/v1/auth/verify-otp',
+      { phone, code },
+      authHeaders()
+    );
+  },
+};
 
 // User API
 export const userAPI = {
