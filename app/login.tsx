@@ -19,10 +19,8 @@ import { useRouter, Stack } from 'expo-router';
 import { Phone, ArrowRight, ShieldCheck } from 'lucide-react-native';
 import { useThemedAlert } from '@/components/ThemedAlert';
 import { useAuth } from '@/contexts/AuthContext';
-import { riderAuthAPI, userAPI } from '@/lib/api';
-import { sendFirebaseOTP, verifyFirebaseOTP } from '@/lib/firebase-auth';
+import { riderAuthAPI, userAPI, authOTPAPI, api } from '@/lib/api';
 import { requestNotificationPermission, getFCMToken } from '@/services/firebase-messaging';
-import type { FirebaseAuthTypes } from '@react-native-firebase/auth';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { YumDudeLogo } from '@/components/YumDudeLogo';
 import { riderTheme } from '@/theme/riderTheme';
@@ -33,7 +31,7 @@ export default function LoginScreen() {
   const { login } = useAuth();
   const [phone, setPhone] = useState('');
   const [otp, setOtp] = useState('');
-  const [confirm, setConfirm] = useState<FirebaseAuthTypes.ConfirmationResult | null>(null);
+  const [otpSent, setOtpSent] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [riderData, setRiderData] = useState<{ riderId: string; phone: string; name: string } | null>(null);
 
@@ -46,6 +44,9 @@ export default function LoginScreen() {
     setIsLoading(true);
     try {
       const phoneNumber = `+91${phone}`;
+      const otpPhone = phone;
+      
+      // Check if rider can login (send with +91 prefix)
       const statusResponse = await riderAuthAPI.checkLogin(phoneNumber);
 
       if (statusResponse.status === 'NOT_FOUND') {
@@ -94,24 +95,27 @@ export default function LoginScreen() {
         return;
       }
 
-      const result = await sendFirebaseOTP(phoneNumber);
+      // Status is APPROVED - proceed with OTP
+      console.log('📤 Sending OTP to rider:', phoneNumber);
+      console.log('📤 Sending OTP via backend:', { phone: otpPhone });
+      const result = await authOTPAPI.sendOtp(otpPhone);
+      console.log('✅ Send OTP response:', result);
 
-      if (result.success && result.confirmation) {
-        setConfirm(result.confirmation);
-
+      if (result.success) {
+        console.log('✅ OTP sent successfully');
+        setOtpSent(true);
+        
+        // Store rider data temporarily (will be saved to context after OTP verification)
         setRiderData({
           riderId: statusResponse.riderId!,
           phone: statusResponse.phone!,
           name: statusResponse.name!,
         });
 
-        if (result.testMessage) {
-          showAlert('OTP Sent (Test Mode)', result.testMessage, undefined, 'info');
-        } else {
-          showAlert('OTP Sent', 'Please enter the 6-digit OTP sent to your phone', undefined, 'success');
-        }
+        showAlert('OTP Sent', result.message || 'Please enter the OTP sent to your phone', undefined, 'success');
       } else {
-        showAlert('Error', result.error || 'Failed to send OTP. Please try again.', undefined, 'error');
+        console.error('❌ Failed to send OTP:', result.message || result.error);
+        showAlert('Error', result.message || result.error || 'Failed to send OTP. Please try again.', undefined, 'error');
       }
     } catch (error: any) {
       showAlert('Error', error.message || 'Failed to send OTP. Please try again.', undefined, 'error');
@@ -121,12 +125,12 @@ export default function LoginScreen() {
   };
 
   const handleVerifyOTP = async () => {
-    if (!otp || otp.length !== 6) {
-      showAlert('Invalid OTP', 'Please enter the 6-digit OTP', undefined, 'warning');
+    if (!otp || otp.length !== 4) {
+      showAlert('Invalid OTP', 'Please enter the 4-digit OTP', undefined, 'warning');
       return;
     }
 
-    if (!confirm) {
+    if (!otpSent) {
       showAlert('Error', 'Please request OTP first', undefined, 'error');
       return;
     }
@@ -138,16 +142,31 @@ export default function LoginScreen() {
 
     setIsLoading(true);
     try {
-      const result = await verifyFirebaseOTP(confirm, otp);
+      const otpPhone = phone;
+      console.log('🔐 Verifying OTP via backend:', { phone: otpPhone, codeLength: otp.length });
+      const result = await authOTPAPI.verifyOtp(otpPhone, otp);
+      console.log('✅ Verify OTP response:', result);
 
       if (!result.success) {
         showAlert('Verification Failed', result.error || 'Invalid OTP', undefined, 'error');
         setIsLoading(false);
         return;
       }
+      
+      // Store JWT token if received
+      if (result.token) {
+        console.log('💾 Storing JWT token...');
+        await AsyncStorage.setItem('@jwt_token', result.token);
+        api.setJWTToken(result.token);
+        console.log('✅ JWT token stored and set in API client');
+      }
+      
+      console.log('✅ OTP verified successfully');
 
       await login(riderData);
       await registerFCMToken(riderData.phone);
+      
+      console.log('✅ Logged in successfully, redirecting to home...');
     } catch (error: any) {
       showAlert('Invalid OTP', 'The OTP you entered is incorrect. Please try again.', undefined, 'error');
     } finally {
@@ -193,58 +212,55 @@ export default function LoginScreen() {
               </View>
             </View>
 
-            <View style={styles.formCard}>
-              {!confirm ? (
-                <View style={styles.form}>
-                  <View style={styles.inputGroup}>
-                    <Text style={styles.label}>Mobile Number</Text>
-                    <View style={styles.phoneInput}>
-                      <Text style={styles.countryCode}>+91</Text>
-                      <TextInput
-                        style={styles.input}
-                        placeholder="10-digit mobile number"
-                        placeholderTextColor={riderTheme.colors.textMuted}
-                        value={phone}
-                        onChangeText={(text) => setPhone(text.replace(/[^0-9]/g, ''))}
-                        keyboardType="phone-pad"
-                        maxLength={10}
-                        editable={!isLoading}
-                      />
-                      <Phone size={18} color={riderTheme.colors.textMuted} />
-                    </View>
-                  </View>
-
-                  <TouchableOpacity
-                    style={[styles.sendButton, isLoading && styles.sendButtonDisabled]}
-                    onPress={handleSendOTP}
-                    disabled={isLoading}
-                    activeOpacity={0.88}
-                  >
-                    {isLoading ? (
-                      <ActivityIndicator color="#FFFFFF" />
-                    ) : (
-                      <>
-                        <Text style={styles.sendButtonText}>Send OTP</Text>
-                        <ArrowRight size={20} color="#FFFFFF" />
-                      </>
-                    )}
-                  </TouchableOpacity>
-                </View>
-              ) : (
-                <View style={styles.form}>
-                  <View style={styles.inputGroup}>
-                    <Text style={styles.label}>Enter OTP</Text>
+            {!otpSent ? (
+              <View style={styles.form}>
+                <View style={styles.inputGroup}>
+                  <Text style={styles.label}>Mobile Number</Text>
+                  <View style={styles.phoneInput}>
+                    <Text style={styles.countryCode}>+91</Text>
                     <TextInput
-                      style={styles.otpInput}
-                      placeholder="123456"
-                      placeholderTextColor={riderTheme.colors.textMuted}
-                      value={otp}
-                      onChangeText={(text) => setOtp(text.replace(/[^0-9]/g, ''))}
-                      keyboardType="number-pad"
-                      maxLength={6}
+                      style={styles.input}
+                      placeholder="10-digit mobile number"
+                      value={phone}
+                      onChangeText={(text) => setPhone(text.replace(/[^0-9]/g, ''))}
+                      keyboardType="phone-pad"
+                      maxLength={10}
                       editable={!isLoading}
                     />
                   </View>
+                </View>
+
+                <TouchableOpacity
+                  style={[styles.sendButton, isLoading && styles.sendButtonDisabled]}
+                  onPress={handleSendOTP}
+                  disabled={isLoading}
+                  activeOpacity={0.8}
+                >
+                  {isLoading ? (
+                    <ActivityIndicator color="#FFFFFF" />
+                  ) : (
+                    <>
+                      <Text style={styles.sendButtonText}>Send OTP</Text>
+                      <ArrowRight size={20} color="#FFFFFF" />
+                    </>
+                  )}
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <View style={styles.form}>
+                <View style={styles.inputGroup}>
+                  <Text style={styles.label}>Enter OTP</Text>
+                  <TextInput
+                    style={styles.otpInput}
+                    placeholder="1234"
+                    placeholderTextColor="#9CA3AF"
+                    value={otp}
+                    onChangeText={(text) => setOtp(text.replace(/[^0-9]/g, ''))}
+                    keyboardType="number-pad"
+                    maxLength={4}
+                    editable={!isLoading}
+                  />
+                </View>
 
                   <TouchableOpacity
                     style={[styles.verifyButton, isLoading && styles.sendButtonDisabled]}
@@ -259,16 +275,15 @@ export default function LoginScreen() {
                     )}
                   </TouchableOpacity>
 
-                  <TouchableOpacity
-                    style={styles.resendButton}
-                    onPress={() => setConfirm(null)}
-                    disabled={isLoading}
-                  >
-                    <Text style={styles.resendButtonText}>Change Number</Text>
-                  </TouchableOpacity>
-                </View>
-              )}
-            </View>
+                <TouchableOpacity
+                  style={styles.resendButton}
+                  onPress={() => setOtpSent(false)}
+                  disabled={isLoading}
+                >
+                  <Text style={styles.resendButtonText}>Change Number</Text>
+                </TouchableOpacity>
+              </View>
+            )}
 
             <TouchableOpacity
               style={styles.signupLink}

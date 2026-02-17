@@ -22,9 +22,14 @@ export class APIError extends Error {
 
 class APIClient {
   private baseURL: string;
+  private jwtToken: string | null = null;
 
   constructor(baseURL: string) {
     this.baseURL = baseURL;
+  }
+
+  setJWTToken(token: string | null) {
+    this.jwtToken = token;
   }
 
   private async request<T>(
@@ -38,12 +43,21 @@ class APIClient {
       console.log('[API] Request body:', options.body);
     }
 
+    // Add Authorization header if JWT token is available
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      ...options.headers,
+    };
+    
+    if (this.jwtToken) {
+      headers['Authorization'] = `Bearer ${this.jwtToken}`;
+    }
+
+    console.log('[API] Request headers:', headers);
+
     const response = await fetch(url, {
       ...options,
-      headers: {
-        'Content-Type': 'application/json',
-        ...options.headers,
-      },
+      headers,
     });
 
     console.log(`[API] Response status: ${response.status}`);
@@ -64,17 +78,19 @@ class APIClient {
     return this.request<T>(endpoint, { method: 'GET' });
   }
 
-  async post<T>(endpoint: string, body: any): Promise<T> {
+  async post<T>(endpoint: string, body: any, headers?: Record<string, string>): Promise<T> {
     return this.request<T>(endpoint, {
       method: 'POST',
       body: JSON.stringify(body),
+      headers,
     });
   }
 
-  async put<T>(endpoint: string, body: any): Promise<T> {
+  async put<T>(endpoint: string, body: any, headers?: Record<string, string>): Promise<T> {
     return this.request<T>(endpoint, {
       method: 'PUT',
       body: JSON.stringify(body),
+      headers,
     });
   }
 
@@ -84,6 +100,35 @@ class APIClient {
 }
 
 export const api = new APIClient(API_BASE_URL);
+
+const AUTH_API_KEY = 'dev-mobile-key-12345';
+
+const authHeaders = () => ({
+  'X-Api-Key': AUTH_API_KEY,
+});
+
+export const authOTPAPI = {
+  sendOtp: async (phone: string) => {
+    if (!AUTH_API_KEY) {
+      throw new Error('Missing API key for OTP service');
+    }
+    return api.post<{ success: boolean; message?: string; error?: string }>(
+      '/api/v1/auth/send-otp',
+      { phone },
+      authHeaders()
+    );
+  },
+  verifyOtp: async (phone: string, code: string) => {
+    if (!AUTH_API_KEY) {
+      throw new Error('Missing API key for OTP service');
+    }
+    return api.post<{ success: boolean; idToken?: string; userId?: string; isNewUser?: boolean; token?: string; error?: string }>(
+      '/api/v1/auth/verify-otp',
+      { phone, code },
+      authHeaders()
+    );
+  },
+};
 
 // User API
 export const userAPI = {

@@ -7,7 +7,7 @@ import React, { createContext, useContext, useState, useEffect, ReactNode } from
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import auth from '@react-native-firebase/auth';
 import { AppState } from 'react-native';
-import { riderStatusAPI } from '@/lib/api';
+import { riderStatusAPI, api } from '@/lib/api';
 
 interface Rider {
   riderId: string;
@@ -44,10 +44,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const riderId = await AsyncStorage.getItem('@rider_id');
       const phone = await AsyncStorage.getItem('@rider_phone');
       const name = await AsyncStorage.getItem('@rider_name');
+      const jwtToken = await AsyncStorage.getItem('@jwt_token');
 
       if (loggedIn === 'true' && riderId && phone && name) {
         setRider({ riderId, phone, name });
         setIsLoggedIn(true);
+      }
+      
+      if (jwtToken) {
+        api.setJWTToken(jwtToken);
+        console.log('✅ JWT token loaded and set in API client');
       }
     } catch (error) {
       console.error('Failed to load rider session:', error);
@@ -81,7 +87,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       '@rider_id',
       '@rider_phone',
       '@rider_name',
+      '@jwt_token',
     ]);
+    
+    // Clear JWT token from API client
+    api.setJWTToken(null);
     
     // Sign out from Firebase (only if user is signed in)
     try {
