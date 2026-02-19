@@ -19,7 +19,7 @@ import { useRouter, Stack } from 'expo-router';
 import { Phone, ArrowRight } from 'lucide-react-native';
 import { useThemedAlert } from '@/components/ThemedAlert';
 import { useAuth } from '@/contexts/AuthContext';
-import { riderAuthAPI, userAPI, authOTPAPI } from '@/lib/api';
+import { riderAuthAPI, userAPI, authOTPAPI, setApiBaseUrlForPhone } from '@/lib/api';
 import { requestNotificationPermission, getFCMToken } from '@/services/firebase-messaging';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -43,6 +43,7 @@ export default function LoginScreen() {
     try {
       const phoneNumber = `+91${phone}`;
       const otpPhone = phone;
+      setApiBaseUrlForPhone(otpPhone);
       
       // Check if rider can login (send with +91 prefix)
       const statusResponse = await riderAuthAPI.checkLogin(phoneNumber);
@@ -142,6 +143,7 @@ export default function LoginScreen() {
     setIsLoading(true);
     try {
       const otpPhone = phone;
+      setApiBaseUrlForPhone(otpPhone);
       console.log('🔐 Verifying OTP via backend:', { phone: otpPhone, codeLength: otp.length });
       const result = await authOTPAPI.verifyOtp(otpPhone, otp);
       console.log('✅ Verify OTP response:', result);

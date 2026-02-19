@@ -1,6 +1,8 @@
 import * as FileSystem from 'expo-file-system';
 
-const API_BASE_URL = 'https://api.dev.yumdude.com';
+const DEV_BASE_URL = 'https://api.dev.yumdude.com';
+const PROD_BASE_URL = 'https://api.yumdude.com';
+const API_BASE_URL = PROD_BASE_URL;
 
 export interface APIResponse<T> {
   data?: T;
@@ -24,6 +26,10 @@ class APIClient {
   private baseURL: string;
 
   constructor(baseURL: string) {
+    this.baseURL = baseURL;
+  }
+
+  setBaseURL(baseURL: string) {
     this.baseURL = baseURL;
   }
 
@@ -86,6 +92,28 @@ class APIClient {
 }
 
 export const api = new APIClient(API_BASE_URL);
+
+const MOCK_PHONE_LAST10 = new Set([
+  '1999999999',
+  '2999999999',
+  '3999999999',
+  '4999999999',
+  '5999999999',
+  '6999999999',
+  '7999999999',
+  '8999999999',
+]);
+
+const normalizeLast10 = (phone: string) => {
+  const digits = phone.replace(/\D/g, '');
+  return digits.length > 10 ? digits.slice(-10) : digits;
+};
+
+export const isMockPhone = (phone: string) => MOCK_PHONE_LAST10.has(normalizeLast10(phone));
+
+export const setApiBaseUrlForPhone = (phone: string) => {
+  api.setBaseURL(isMockPhone(phone) ? DEV_BASE_URL : PROD_BASE_URL);
+};
 
 const AUTH_API_KEY = 'dev-mobile-key-12345';
 

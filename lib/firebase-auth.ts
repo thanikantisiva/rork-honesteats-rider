@@ -7,10 +7,14 @@ import auth, { FirebaseAuthTypes } from '@react-native-firebase/auth';
 
 // Test phone numbers (last 10 digits) - skip Firebase and use mock OTP
 const TEST_PHONE_LAST10 = new Set([
-  '9999999999',
-  '9561714569',
-  '9165339732',
-  '9380065803',
+  '1999999999',
+  '2999999999',
+  '3999999999',
+  '4999999999',
+  '5999999999',
+  '6999999999',
+  '7999999999',
+  '8999999999'
 ]);
 const TEST_OTP = '1234';
 
