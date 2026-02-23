@@ -21,7 +21,7 @@ import { ChevronLeft, ChevronRight, ShieldCheck } from 'lucide-react-native';
 import { SignupStepper } from '@/components/SignupStepper';
 import { DocumentCapture } from '@/components/DocumentCapture';
 import { useThemedAlert } from '@/components/ThemedAlert';
-import { riderAuthAPI } from '@/lib/api';
+import { riderAuthAPI, setApiBaseUrlForPhone } from '@/lib/api';
 import { validateAadharNumber, validatePANNumber, formatAadhar, formatPAN } from '@/utils/image-utils';
 import { riderTheme } from '@/theme/riderTheme';
 
@@ -113,6 +113,9 @@ export default function SignupScreen() {
   const handleSubmit = async () => {
     setIsSubmitting(true);
     try {
+      // Route signup calls to dev/prod based on entered phone
+      setApiBaseUrlForPhone(formData.phone);
+
       const response = await riderAuthAPI.signup({
         phone: `+91${formData.phone}`,
         firstName: formData.firstName,
