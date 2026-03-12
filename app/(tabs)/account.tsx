@@ -3,10 +3,10 @@
  * Modern rider profile and settings interface
  */
 
-import React from 'react';
-import { StyleSheet, Text, View, ScrollView, TouchableOpacity } from 'react-native';
-import { useRouter, Stack } from 'expo-router';
-import { User, FileText, HelpCircle, LogOut, ChevronRight, Shield } from 'lucide-react-native';
+import React, { useState } from 'react';
+import { StyleSheet, Text, View, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { useRouter, Stack, useFocusEffect } from 'expo-router';
+import { User, HelpCircle, LogOut, ChevronRight, Shield } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLocation } from '@/contexts/LocationContext';
@@ -14,6 +14,7 @@ import { useOrders } from '@/contexts/OrdersContext';
 import { useThemedAlert } from '@/components/ThemedAlert';
 import { YumDudeLogo } from '@/components/YumDudeLogo';
 import { riderTheme } from '@/theme/riderTheme';
+import { userAPI } from '@/lib/api';
 
 export default function AccountScreen() {
   const router = useRouter();
@@ -22,6 +23,43 @@ export default function AccountScreen() {
   const { goOffline } = useLocation();
   const { activeOrders } = useOrders();
   const { showAlert, AlertComponent } = useThemedAlert();
+  const [profile, setProfile] = useState<{ email?: string; dateOfBirth?: string; upiId?: string } | null>(null);
+  const [profileLoading, setProfileLoading] = useState(true);
+
+  const loadProfile = React.useCallback(async () => {
+    if (!rider?.phone) {
+      setProfileLoading(false);
+      return;
+    }
+    setProfileLoading(true);
+    try {
+      const p = await userAPI.getUser(rider.phone, 'RIDER');
+      setProfile({ email: p.email, dateOfBirth: p.dateOfBirth, upiId: p.upiId });
+    } catch {
+      setProfile({});
+    } finally {
+      setProfileLoading(false);
+    }
+  }, [rider?.phone]);
+
+  useFocusEffect(
+    React.useCallback(() => {
+      loadProfile();
+    }, [loadProfile])
+  );
+
+  const handleEditProfile = () => {
+    router.push('/edit-profile' as any);
+  };
+
+  const handleHelpSupport = () => {
+    showAlert(
+      'Need Help?',
+      'Contact our support team at support@honesteats.com or call +91-1234567890',
+      undefined,
+      'info'
+    );
+  };
 
   const handleLogout = () => {
     if (activeOrders.length > 0) {
@@ -73,7 +111,19 @@ export default function AccountScreen() {
               <YumDudeLogo size={56} />
             </View>
             <Text style={styles.profileName}>{rider?.name}</Text>
+            <Text style={styles.profileRiderId}>Rider ID: {rider?.riderId}</Text>
             <Text style={styles.profilePhone}>{rider?.phone}</Text>
+            {profileLoading ? (
+              <ActivityIndicator size="small" color={riderTheme.colors.primary} style={{ marginVertical: 8 }} />
+            ) : (
+              (profile?.email || profile?.dateOfBirth || profile?.upiId) ? (
+                <View style={styles.profileDetails}>
+                  {profile?.email ? <Text style={styles.profileDetailLine}>Email: {profile.email}</Text> : null}
+                  {profile?.dateOfBirth ? <Text style={styles.profileDetailLine}>DOB: {profile.dateOfBirth}</Text> : null}
+                  {profile?.upiId ? <Text style={styles.profileDetailLine}>UPI: {profile.upiId}</Text> : null}
+                </View>
+              ) : null
+            )}
             <View style={styles.verifiedBadge}>
               <Shield size={14} color={riderTheme.colors.success} strokeWidth={2.5} />
               <Text style={styles.verifiedText}>Verified Partner</Text>
@@ -82,7 +132,7 @@ export default function AccountScreen() {
 
           {/* Menu Section */}
           <View style={styles.menuSection}>
-            <TouchableOpacity style={styles.menuItem} activeOpacity={0.85}>
+            <TouchableOpacity style={styles.menuItem} activeOpacity={0.85} onPress={handleEditProfile}>
               <View style={[styles.menuIconWrap, { backgroundColor: riderTheme.colors.primarySoft }]}>
                 <User size={20} color={riderTheme.colors.primary} strokeWidth={2.5} />
               </View>
@@ -93,18 +143,7 @@ export default function AccountScreen() {
               <ChevronRight size={20} color={riderTheme.colors.textMuted} strokeWidth={2} />
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.menuItem} activeOpacity={0.85}>
-              <View style={[styles.menuIconWrap, { backgroundColor: riderTheme.colors.primarySoft }]}>
-                <FileText size={20} color={riderTheme.colors.primary} strokeWidth={2.5} />
-              </View>
-              <View style={styles.menuContent}>
-                <Text style={styles.menuTitle}>Documents</Text>
-                <Text style={styles.menuDesc}>View verification documents</Text>
-              </View>
-              <ChevronRight size={20} color={riderTheme.colors.textMuted} strokeWidth={2} />
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.menuItem} activeOpacity={0.85}>
+            <TouchableOpacity style={styles.menuItem} activeOpacity={0.85} onPress={handleHelpSupport}>
               <View style={[styles.menuIconWrap, { backgroundColor: riderTheme.colors.primarySoft }]}>
                 <HelpCircle size={20} color={riderTheme.colors.primary} strokeWidth={2.5} />
               </View>
@@ -192,11 +231,30 @@ const styles = StyleSheet.create({
     marginBottom: 4,
     letterSpacing: 0.3,
   },
+  profileRiderId: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: riderTheme.colors.textMuted,
+    marginBottom: 4,
+  },
   profilePhone: {
     fontSize: 13,
     fontWeight: '500',
     color: riderTheme.colors.textSecondary,
-    marginBottom: 14,
+    marginBottom: 8,
+  },
+  profileDetails: {
+    alignSelf: 'stretch',
+    marginBottom: 12,
+    paddingTop: 4,
+    borderTopWidth: 1,
+    borderTopColor: riderTheme.colors.borderLight,
+  },
+  profileDetailLine: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: riderTheme.colors.textSecondary,
+    marginTop: 4,
   },
   verifiedBadge: {
     flexDirection: 'row',

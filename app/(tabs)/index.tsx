@@ -16,7 +16,7 @@ import {
   Linking,
 } from 'react-native';
 import { useRouter, Stack } from 'expo-router';
-import { Package, Bike } from 'lucide-react-native';
+import { Package, Bike, Star } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useOrders } from '@/contexts/OrdersContext';
 import { useLocation } from '@/contexts/LocationContext';
@@ -31,7 +31,7 @@ export default function OrdersScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { rider } = useAuth();
-  const { orders, activeOrders, completedOrders, isLoading, isLoadingCompleted, refreshOrders, refreshCompletedOrders, acceptOrder, rejectOrder, updateOrderStatus } = useOrders();
+  const { orders, activeOrders, completedOrders, riderRating, riderRatedCount, isLoading, isLoadingCompleted, refreshOrders, refreshCompletedOrders, acceptOrder, rejectOrder, updateOrderStatus } = useOrders();
   const { isOnline, toggleOnline, currentLocation } = useLocation();
   const { showAlert, AlertComponent } = useThemedAlert();
   const [selectedTab, setSelectedTab] = useState<TabFilter>('active');
@@ -155,6 +155,13 @@ export default function OrdersScreen() {
             <View style={styles.headerLeft}>
               <Text style={styles.greeting}>Hey there,</Text>
               <Text style={styles.userName}>{rider?.name.split(' ')[0]}</Text>
+              <View style={styles.ratingRow}>
+                <Star size={14} color={riderTheme.colors.warning} fill={riderTheme.colors.warning} />
+                <Text style={styles.ratingText}>
+                  {riderRating != null ? riderRating.toFixed(1) : '—'}
+                  {riderRatedCount > 0 ? ` (${riderRatedCount} rating${riderRatedCount !== 1 ? 's' : ''})` : ' (0 ratings)'}
+                </Text>
+              </View>
             </View>
             
             {/* Floating Online Toggle Card */}
@@ -310,6 +317,17 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: riderTheme.colors.textPrimary,
     letterSpacing: 0.3,
+  },
+  ratingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 4,
+  },
+  ratingText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: riderTheme.colors.textSecondary,
   },
   onlineCard: {
     flexDirection: 'row',

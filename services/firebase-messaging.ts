@@ -4,7 +4,7 @@
  */
 
 import messaging from '@react-native-firebase/messaging';
-import { Platform } from 'react-native';
+import { PermissionsAndroid, Platform } from 'react-native';
 
 /**
  * Request notification permission from user
@@ -13,23 +13,33 @@ export async function requestNotificationPermission(): Promise<boolean> {
   try {
     console.log('🔔 Requesting notification permission...');
     
-    if (Platform.OS === 'ios') {
-      const authStatus = await messaging().requestPermission();
-      const enabled =
-        authStatus === messaging.AuthorizationStatus.AUTHORIZED ||
-        authStatus === messaging.AuthorizationStatus.PROVISIONAL;
+    if (Platform.OS === 'android') {
+      if (Platform.Version >= 33) {
+        const granted = await PermissionsAndroid.request(
+          PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS
+        );
 
-      if (enabled) {
-        console.log('✅ iOS notification permission granted:', authStatus);
-      } else {
-        console.log('❌ iOS notification permission denied');
+        if (granted !== PermissionsAndroid.RESULTS.GRANTED) {
+          console.warn('⚠️ Android notification permission denied');
+          return false;
+        }
       }
-      return enabled;
-    } else {
-      // Android doesn't require explicit permission request for notifications
-      console.log('✅ Android notification permission granted (default)');
+
+      console.log('✅ Android notification permission granted');
       return true;
     }
+
+    const authStatus = await messaging().requestPermission();
+    const enabled =
+      authStatus === messaging.AuthorizationStatus.AUTHORIZED ||
+      authStatus === messaging.AuthorizationStatus.PROVISIONAL;
+
+    if (enabled) {
+      console.log('✅ iOS notification permission granted:', authStatus);
+    } else {
+      console.log('❌ iOS notification permission denied');
+    }
+    return enabled;
   } catch (error) {
     console.error('❌ Error requesting notification permission:', error);
     return false;

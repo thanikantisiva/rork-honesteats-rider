@@ -37,6 +37,9 @@ export default function SignupScreen() {
     firstName: '',
     lastName: '',
     phone: '',
+    email: '',
+    dateOfBirth: '',
+    upiId: '',
     address: '',
     aadharNumber: '',
     aadharImageBase64: '',
@@ -46,6 +49,13 @@ export default function SignupScreen() {
 
   const updateField = (field: string, value: string) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const formatDobInput = (value: string) => {
+    const digits = value.replace(/\D/g, '').slice(0, 8);
+    if (digits.length <= 2) return digits;
+    if (digits.length <= 4) return `${digits.slice(0, 2)}/${digits.slice(2)}`;
+    return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
   };
 
   const validateStep = (): boolean => {
@@ -65,6 +75,32 @@ export default function SignupScreen() {
         }
         if (!formData.address.trim()) {
           showAlert('Required', 'Please enter your address', undefined, 'warning');
+          return false;
+        }
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!formData.email.trim()) {
+          showAlert('Required', 'Please enter your email', undefined, 'warning');
+          return false;
+        }
+        if (!emailRegex.test(formData.email.trim())) {
+          showAlert('Invalid Email', 'Please enter a valid email address', undefined, 'warning');
+          return false;
+        }
+        if (!formData.dateOfBirth.trim()) {
+          showAlert('Required', 'Please enter your date of birth', undefined, 'warning');
+          return false;
+        }
+        if (!/^\d{2}\/\d{2}\/\d{4}$/.test(formData.dateOfBirth.trim())) {
+          showAlert('Invalid DOB', 'Use format DD/MM/YYYY (e.g. 15/01/1990)', undefined, 'warning');
+          return false;
+        }
+        if (!formData.upiId.trim()) {
+          showAlert('Required', 'Please enter your UPI ID for settlements', undefined, 'warning');
+          return false;
+        }
+        const upiRegex = /^[\w.-]+@[\w.-]+$/;
+        if (!upiRegex.test(formData.upiId.trim())) {
+          showAlert('Invalid UPI', 'UPI ID should be like name@bank or name@upi', undefined, 'warning');
           return false;
         }
         return true;
@@ -120,6 +156,9 @@ export default function SignupScreen() {
         phone: `+91${formData.phone}`,
         firstName: formData.firstName,
         lastName: formData.lastName,
+        email: formData.email.trim(),
+        dateOfBirth: formData.dateOfBirth.trim(),
+        upiId: formData.upiId.trim(),
         address: formData.address,
         aadharNumber: formData.aadharNumber.replace(/[\s-]/g, ''),
         aadharImageBase64: formData.aadharImageBase64,
@@ -230,6 +269,46 @@ export default function SignupScreen() {
                 </View>
 
                 <View style={styles.inputGroup}>
+                  <Text style={styles.label}>Email *</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="your@email.com"
+                    placeholderTextColor={riderTheme.colors.textMuted}
+                    value={formData.email}
+                    onChangeText={(text) => updateField('email', text)}
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                  />
+                </View>
+
+                <View style={styles.inputGroup}>
+                  <Text style={styles.label}>Date of Birth *</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="DD/MM/YYYY"
+                    placeholderTextColor={riderTheme.colors.textMuted}
+                    value={formData.dateOfBirth}
+                    onChangeText={(value) => updateField('dateOfBirth', formatDobInput(value))}
+                    keyboardType="number-pad"
+                    maxLength={10}
+                  />
+                </View>
+
+                <View style={styles.inputGroup}>
+                  <Text style={styles.label}>UPI ID (for settlements) *</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="name@bank or name@upi"
+                    placeholderTextColor={riderTheme.colors.textMuted}
+                    value={formData.upiId}
+                    onChangeText={(text) => updateField('upiId', text)}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                  />
+                </View>
+
+                <View style={styles.inputGroup}>
                   <Text style={styles.label}>Address *</Text>
                   <TextInput
                     style={[styles.input, styles.textArea]}
@@ -317,6 +396,9 @@ export default function SignupScreen() {
                   <Text style={styles.reviewSectionTitle}>Personal Information</Text>
                   <View style={styles.reviewRow}><Text style={styles.reviewLabel}>Name:</Text><Text style={styles.reviewValue}>{formData.firstName} {formData.lastName}</Text></View>
                   <View style={styles.reviewRow}><Text style={styles.reviewLabel}>Mobile:</Text><Text style={styles.reviewValue}>{formData.phone}</Text></View>
+                  <View style={styles.reviewRow}><Text style={styles.reviewLabel}>Email:</Text><Text style={styles.reviewValue}>{formData.email}</Text></View>
+                  <View style={styles.reviewRow}><Text style={styles.reviewLabel}>DOB:</Text><Text style={styles.reviewValue}>{formData.dateOfBirth}</Text></View>
+                  <View style={styles.reviewRow}><Text style={styles.reviewLabel}>UPI (settlements):</Text><Text style={styles.reviewValue}>{formData.upiId}</Text></View>
                   <View style={styles.reviewRow}><Text style={styles.reviewLabel}>Address:</Text><Text style={styles.reviewValue}>{formData.address}</Text></View>
                 </View>
 

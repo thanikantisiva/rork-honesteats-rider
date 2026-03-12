@@ -72,6 +72,11 @@ export interface Earnings {
   tips: number;
   incentives: number;
   onlineTimeMinutes: number;
+  orderId?: string | null;
+  settlementId?: string | null;
+  settled?: boolean;
+  settledAt?: string | null;
+  createdAt?: string;
 }
 
 export interface EarningsSummary {

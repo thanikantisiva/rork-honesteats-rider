@@ -52,8 +52,14 @@ class APIClient {
     // Add Authorization header if JWT token is available
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
-      ...options.headers,
     };
+
+    if (options.headers) {
+      const normalizedHeaders = new Headers(options.headers);
+      normalizedHeaders.forEach((value, key) => {
+        headers[key] = value;
+      });
+    }
     
     if (this.jwtToken) {
       headers['Authorization'] = `Bearer ${this.jwtToken}`;
@@ -160,12 +166,57 @@ export const authOTPAPI = {
 
 // User API
 export const userAPI = {
+  getUser: async (
+    phone: string,
+    role: 'CUSTOMER' | 'RIDER' = 'CUSTOMER'
+  ): Promise<{
+    phone: string;
+    name?: string;
+    email?: string;
+    dateOfBirth?: string;
+    upiId?: string;
+    riderId?: string;
+    role: string;
+  }> => {
+    return api.get(`/api/v1/users/${phone}?role=${role}`);
+  },
+
+  updateUser: async (
+    phone: string,
+    data: {
+      name?: string;
+      email?: string;
+      dateOfBirth?: string;
+      upiId?: string;
+      isActive?: boolean;
+      role?: 'CUSTOMER' | 'RIDER';
+    }
+  ): Promise<{
+    phone: string;
+    name?: string;
+    email?: string;
+    dateOfBirth?: string;
+    upiId?: string;
+    riderId?: string;
+    role: string;
+  }> => {
+    return api.put(`/api/v1/users/${phone}`, data);
+  },
+
   /**
    * Register FCM token for push notifications
    */
   registerFCMToken: async (phone: string, fcmToken: string): Promise<{ message: string }> => {
     console.log(`[API] Registering FCM token for: ${phone}`);
     return api.post(`/api/v1/users/${phone}/fcm-token`, { fcmToken });
+  },
+
+  /**
+   * Logout: clear FCM token and set isActive false on backend (stops push notifications).
+   * role defaults to 'CUSTOMER'; use 'RIDER' for rider app.
+   */
+  logout: async (phone: string, role: 'CUSTOMER' | 'RIDER' = 'CUSTOMER'): Promise<{ message: string }> => {
+    return api.post(`/api/v1/users/${phone}/logout`, { role });
   },
 };
 
@@ -198,6 +249,9 @@ export const riderAuthAPI = {
     phone: string;
     firstName: string;
     lastName: string;
+    email: string;
+    dateOfBirth: string;
+    upiId: string;
     address: string;
     aadharNumber: string;
     aadharImageBase64: string;
@@ -216,6 +270,9 @@ export const riderAuthAPI = {
       phone: data.phone,
       firstName: data.firstName,
       lastName: data.lastName,
+      email: data.email,
+      dateOfBirth: data.dateOfBirth,
+      upiId: data.upiId,
       address: data.address,
       aadharNumber: data.aadharNumber,
       aadharImageUrl,  // S3 URL instead of base64
@@ -225,14 +282,17 @@ export const riderAuthAPI = {
   },
 
   checkLogin: (phone: string) => 
-    api.post<{ status: string; canLogin: boolean; message?: string; riderId?: string; name?: string; reason?: string }>('/api/v1/riders/login/check', { phone }),
+    api.post<{ status: string; canLogin: boolean; message?: string; riderId?: string; phone?: string; name?: string; reason?: string }>('/api/v1/riders/login/check', { phone }),
+
+  getRating: (riderId: string) =>
+    api.get<{ riderRating: number | null; riderRatedCount: number }>(`/api/v1/riders/${riderId}/rating`),
 };
 
 // Rider Order APIs
 export const riderOrderAPI = {
   getOrders: (riderId: string, status?: string) => {
     const query = status ? `?status=${status}` : '';
-    return api.get<{ orders: any[]; total: number }>(`/api/v1/riders/${riderId}/orders${query}`);
+    return api.get<{ orders: any[]; total: number; riderRating?: number; riderRatedCount?: number }>(`/api/v1/riders/${riderId}/orders${query}`);
   },
 
   acceptOrder: (riderId: string, orderId: string, status: string) =>

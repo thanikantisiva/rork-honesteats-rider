@@ -4,7 +4,7 @@
  */
 
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
-import { riderOrderAPI } from '@/lib/api';
+import { riderOrderAPI, riderAuthAPI } from '@/lib/api';
 import { RiderOrder } from '@/types';
 import { useAuth } from './AuthContext';
 import { useLocation } from './LocationContext';
@@ -13,6 +13,8 @@ interface OrdersContextType {
   orders: RiderOrder[];
   activeOrders: RiderOrder[];
   completedOrders: RiderOrder[];
+  riderRating: number | null;
+  riderRatedCount: number;
   isLoading: boolean;
   isLoadingCompleted: boolean;
   refreshOrders: (force?: boolean) => Promise<void>;
@@ -29,6 +31,8 @@ export function OrdersProvider({ children }: { children: ReactNode }) {
   const { isOnline } = useLocation();
   const [orders, setOrders] = useState<RiderOrder[]>([]);
   const [completedOrdersList, setCompletedOrdersList] = useState<RiderOrder[]>([]);
+  const [riderRating, setRiderRating] = useState<number | null>(null);
+  const [riderRatedCount, setRiderRatedCount] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingCompleted, setIsLoadingCompleted] = useState(false);
 
@@ -59,13 +63,13 @@ export function OrdersProvider({ children }: { children: ReactNode }) {
 
     setIsLoading(true);
     try {
-      // Fetch only active orders (RIDER_ASSIGNED, PICKED_UP, OUT_FOR_DELIVERY)
-      // This is optimized - doesn't fetch completed orders on every refresh
-      const [offeredResponse, riderAssignedResponse, pickedUpResponse, outForDeliveryResponse] = await Promise.all([
+      // Fetch active orders and rider rating in parallel (rating from dedicated API)
+      const [offeredResponse, riderAssignedResponse, pickedUpResponse, outForDeliveryResponse, ratingResponse] = await Promise.all([
         riderOrderAPI.getOrders(rider.riderId, 'OFFERED_TO_RIDER'),
         riderOrderAPI.getOrders(rider.riderId, 'RIDER_ASSIGNED'),
         riderOrderAPI.getOrders(rider.riderId, 'PICKED_UP'),
-        riderOrderAPI.getOrders(rider.riderId, 'OUT_FOR_DELIVERY')
+        riderOrderAPI.getOrders(rider.riderId, 'OUT_FOR_DELIVERY'),
+        riderAuthAPI.getRating(rider.riderId).catch(() => ({ riderRating: null, riderRatedCount: 0 })),
       ]);
       
       const allActiveOrders = [
@@ -76,7 +80,11 @@ export function OrdersProvider({ children }: { children: ReactNode }) {
       ];
       
       setOrders(allActiveOrders);
-      console.log(`📦 Fetched ${allActiveOrders.length} active orders for rider`);
+      const rating = ratingResponse.riderRating != null && Number.isFinite(ratingResponse.riderRating) ? ratingResponse.riderRating : null;
+      const count = Number.isFinite(ratingResponse.riderRatedCount) ? ratingResponse.riderRatedCount : 0;
+      setRiderRating(rating);
+      setRiderRatedCount(count);
+      console.log(`📦 Fetched ${allActiveOrders.length} active orders for rider; rating=${rating}, count=${count}`);
     } catch (error) {
       console.error('Failed to fetch orders:', error);
     } finally {
@@ -134,6 +142,9 @@ export function OrdersProvider({ children }: { children: ReactNode }) {
     try {
       const response = await riderOrderAPI.getOrders(rider.riderId, 'DELIVERED');
       setCompletedOrdersList(response.orders);
+      const ratingRes = await riderAuthAPI.getRating(rider.riderId).catch(() => ({ riderRating: null, riderRatedCount: 0 }));
+      setRiderRating(ratingRes.riderRating != null && Number.isFinite(ratingRes.riderRating) ? ratingRes.riderRating : null);
+      setRiderRatedCount(Number.isFinite(ratingRes.riderRatedCount) ? ratingRes.riderRatedCount : 0);
       console.log(`✅ Fetched ${response.orders.length} completed orders for rider`);
     } catch (error) {
       console.error('Failed to fetch completed orders:', error);
@@ -154,6 +165,8 @@ export function OrdersProvider({ children }: { children: ReactNode }) {
         orders,
         activeOrders,
         completedOrders,
+        riderRating,
+        riderRatedCount,
         isLoading,
         isLoadingCompleted,
         refreshOrders,

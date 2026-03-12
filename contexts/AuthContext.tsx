@@ -7,7 +7,7 @@ import React, { createContext, useContext, useState, useEffect, ReactNode } from
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import auth from '@react-native-firebase/auth';
 import { AppState } from 'react-native';
-import { riderStatusAPI, api } from '@/lib/api';
+import { riderStatusAPI, api, userAPI } from '@/lib/api';
 
 interface Rider {
   riderId: string;
@@ -21,6 +21,7 @@ interface AuthContextType {
   isLoggedIn: boolean;
   login: (rider: Rider) => Promise<void>;
   logout: (goOfflineCallback?: () => Promise<void>) => Promise<void>;
+  updateRider: (updates: Partial<Rider>) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -82,6 +83,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     }
 
+    // Clear FCM token on backend so rider stops receiving push notifications
+    if (rider?.phone) {
+      try {
+        await userAPI.logout(rider.phone, 'RIDER');
+        console.log('🔔 FCM token cleared on backend');
+      } catch (error) {
+        console.error('Failed to clear FCM token on logout (non-fatal):', error);
+      }
+    }
+
     await AsyncStorage.multiRemove([
       '@rider_logged_in',
       '@rider_id',
@@ -109,8 +120,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     console.log('✅ Logout complete');
   };
 
+  const updateRider = async (updates: Partial<Rider>) => {
+    if (!rider) return;
+
+    const updatedRider = {
+      ...rider,
+      ...updates,
+    };
+
+    await AsyncStorage.setItem('@rider_id', updatedRider.riderId);
+    await AsyncStorage.setItem('@rider_phone', updatedRider.phone);
+    await AsyncStorage.setItem('@rider_name', updatedRider.name);
+    setRider(updatedRider);
+  };
+
   return (
-    <AuthContext.Provider value={{ rider, isLoading, isLoggedIn, login, logout }}>
+    <AuthContext.Provider value={{ rider, isLoading, isLoggedIn, login, logout, updateRider }}>
       {children}
     </AuthContext.Provider>
   );
