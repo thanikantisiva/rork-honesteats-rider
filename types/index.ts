@@ -12,6 +12,13 @@ export interface Rider {
   workingOnOrder?: string;
 }
 
+/** Subset of calculate-fee response stored on order; rider job payout uses riderSettlementAmount */
+export interface RiderOrderCalculatedFeeResponse {
+  riderSettlementAmount?: number;
+  deliveryFee?: number;
+  [key: string]: unknown;
+}
+
 export interface RiderOrder {
   orderId: string;
   customerPhone: string;
@@ -39,6 +46,11 @@ export interface RiderOrder {
   riderDeliveredAt?: string;
   offeredAt?: string;
   createdAt: string;
+  calculatedFeeResponse?: RiderOrderCalculatedFeeResponse;
+  revenue?: {
+    riderRevenue?: { finalPayout?: number };
+    [key: string]: unknown;
+  };
 }
 
 export interface OrderItem {

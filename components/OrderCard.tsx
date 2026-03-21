@@ -11,6 +11,32 @@ import { StatusBadge } from './StatusBadge';
 import { formatDistance, calculateDistance } from '@/utils/distance';
 import { riderTheme } from '@/theme/riderTheme';
 
+function asFiniteNumber(v: unknown): number | undefined {
+  if (typeof v === 'number' && Number.isFinite(v)) return v;
+  if (typeof v === 'string' && v.trim() !== '') {
+    const p = parseFloat(v);
+    if (Number.isFinite(p)) return p;
+  }
+  return undefined;
+}
+
+/** Job-card earnings: settlement from calculate-fee, else revenue snapshot, else delivery fee */
+function getJobCardRiderEarnings(order: RiderOrder): number {
+  const settlement = asFiniteNumber(order.calculatedFeeResponse?.riderSettlementAmount);
+  if (settlement !== undefined) return settlement;
+  const fromRevenue = asFiniteNumber(order.revenue?.riderRevenue?.finalPayout);
+  if (fromRevenue !== undefined) return fromRevenue;
+  const fee = asFiniteNumber(order.deliveryFee);
+  return fee ?? 0;
+}
+
+/** Amount only — rupee is shown by IndianRupee icon next to this text */
+function formatJobEarningsRupees(amount: number): string {
+  if (!Number.isFinite(amount)) return '0';
+  const rounded = Math.round(amount * 100) / 100;
+  return rounded % 1 === 0 ? String(rounded) : rounded.toFixed(2);
+}
+
 interface OrderCardProps {
   order: RiderOrder;
   onPress: () => void;
@@ -79,8 +105,10 @@ export function OrderCard({ order, onPress, onAccept, onReject, onStartDelivery,
       {/* Header with Order ID & Status */}
       <View style={styles.header}>
         <View style={styles.headerLeft}>
-          <Text style={styles.orderLabel}>Order</Text>
-          <Text style={styles.orderId}>#{order.orderId.slice(0, 8).toUpperCase()}</Text>
+          <Text style={styles.orderLabel}>Order ID</Text>
+          <Text style={styles.orderId} selectable>
+            {order.orderId}
+          </Text>
         </View>
         <StatusBadge status={order.status} />
       </View>
@@ -134,7 +162,7 @@ export function OrderCard({ order, onPress, onAccept, onReject, onStartDelivery,
         </View>
         <View style={styles.earningsChip}>
           <IndianRupee size={16} color={riderTheme.colors.success} strokeWidth={2.5} />
-          <Text style={styles.earningsText}>₹{order.deliveryFee}</Text>
+          <Text style={styles.earningsText}>{formatJobEarningsRupees(getJobCardRiderEarnings(order))}</Text>
           <Text style={styles.earningsLabel}>earnings</Text>
         </View>
       </View>
@@ -300,16 +328,18 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     marginBottom: 14,
     paddingBottom: 12,
     borderBottomWidth: 1,
     borderBottomColor: riderTheme.colors.borderLight,
   },
   headerLeft: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    gap: 6,
+    flex: 1,
+    marginRight: 10,
+    flexDirection: 'column',
+    alignItems: 'flex-start',
+    gap: 4,
   },
   orderLabel: {
     fontSize: 10,
@@ -322,7 +352,8 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '800',
     color: riderTheme.colors.textPrimary,
-    letterSpacing: 0.3,
+    letterSpacing: 0.2,
+    flexShrink: 1,
   },
   locationsContainer: {
     marginBottom: 16,

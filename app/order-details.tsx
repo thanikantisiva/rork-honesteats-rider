@@ -58,9 +58,11 @@ export default function OrderDetailsScreen() {
       <SafeAreaView style={styles.container} edges={['bottom']}>
         <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
           <View style={styles.orderHeader}>
-            <View>
+            <View style={styles.orderHeaderText}>
               <Text style={styles.orderLabel}>Order ID</Text>
-              <Text style={styles.orderId}>#{order.orderId.slice(0, 8)}</Text>
+              <Text style={styles.orderId} selectable>
+                {order.orderId}
+              </Text>
             </View>
             <StatusBadge status={order.status} />
           </View>
@@ -170,10 +172,14 @@ const styles = StyleSheet.create({
     padding: 20,
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     borderBottomWidth: 1,
     borderBottomColor: riderTheme.colors.borderLight,
     ...riderTheme.shadow.small,
+  },
+  orderHeaderText: {
+    flex: 1,
+    marginRight: 12,
   },
   orderLabel: {
     fontSize: 12,
@@ -184,10 +190,11 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   orderId: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '800',
     color: riderTheme.colors.textPrimary,
-    letterSpacing: 0.3,
+    letterSpacing: 0.2,
+    flexShrink: 1,
   },
   section: {
     paddingHorizontal: 20,
