@@ -7,7 +7,7 @@ import React, { createContext, useContext, useState, useEffect, ReactNode } from
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import auth from '@react-native-firebase/auth';
 import { AppState } from 'react-native';
-import { riderStatusAPI, api, userAPI } from '@/lib/api';
+import { riderStatusAPI, api, userAPI, setApiBaseUrlForPhone } from '@/lib/api';
 
 interface Rider {
   riderId: string;
@@ -48,6 +48,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const jwtToken = await AsyncStorage.getItem('@jwt_token');
 
       if (loggedIn === 'true' && riderId && phone && name) {
+        setApiBaseUrlForPhone(phone);
         setRider({ riderId, phone, name });
         setIsLoggedIn(true);
       }

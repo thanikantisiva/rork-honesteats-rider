@@ -4,11 +4,14 @@
  */
 
 import React, { useState } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, TextInput, Alert, Modal } from 'react-native';
-import { MapPin, Home, Package, IndianRupee, Navigation, CheckCircle, Truck, Lock, ArrowRight } from 'lucide-react-native';
+import { StyleSheet, Text, View, TouchableOpacity, TextInput, Alert, Modal, Image, ActivityIndicator } from 'react-native';
+import { MapPin, Home, Package, IndianRupee, Navigation, CheckCircle, Truck, Lock, ArrowRight, Camera, RotateCcw } from 'lucide-react-native';
+import * as ImagePicker from 'expo-image-picker';
+import * as FileSystem from 'expo-file-system';
 import { RiderOrder } from '@/types';
 import { StatusBadge } from './StatusBadge';
 import { formatDistance, calculateDistance } from '@/utils/distance';
+import { imageAPI } from '@/lib/api';
 import { riderTheme } from '@/theme/riderTheme';
 
 function asFiniteNumber(v: unknown): number | undefined {
@@ -42,12 +45,13 @@ interface OrderCardProps {
   onPress: () => void;
   onAccept?: () => void;
   onReject?: (reason?: string) => void;
+  onStartPickupProcess?: () => void;
   onStartDelivery?: () => void;
   onMarkDelivered?: () => void;
   riderLocation?: { lat: number; lng: number };
 }
 
-export function OrderCard({ order, onPress, onAccept, onReject, onStartDelivery, onMarkDelivered, riderLocation }: OrderCardProps) {
+export function OrderCard({ order, onPress, onAccept, onReject, onStartPickupProcess, onStartDelivery, onMarkDelivered, riderLocation }: OrderCardProps) {
   const isOffer = order.status === 'OFFERED_TO_RIDER';
   const isNewOrder = order.status === 'RIDER_ASSIGNED';
   const isPickedUp = order.status === 'PICKED_UP';
@@ -55,6 +59,9 @@ export function OrderCard({ order, onPress, onAccept, onReject, onStartDelivery,
   const isCompleted = order.status === 'DELIVERED';
   const [otpModalVisible, setOtpModalVisible] = useState(false);
   const [otpEntry, setOtpEntry] = useState('');
+  const [packagePhotoUri, setPackagePhotoUri] = useState<string | null>(null);
+  const [isUploadingEvidence, setIsUploadingEvidence] = useState(false);
+  const [hasStartedPickupProcess, setHasStartedPickupProcess] = useState(false);
 
   let distanceToPickup: number | undefined;
   if (riderLocation && order.pickupLat && order.pickupLng) {
@@ -83,6 +90,38 @@ export function OrderCard({ order, onPress, onAccept, onReject, onStartDelivery,
     setOtpEntry('');
     if (onMarkDelivered) {
       onMarkDelivered();
+    }
+  };
+
+  const takePackagePhoto = async () => {
+    const { status } = await ImagePicker.requestCameraPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Camera Permission', 'Camera access is required to take a package photo.');
+      return;
+    }
+    const result = await ImagePicker.launchCameraAsync({
+      mediaTypes: ['images'],
+      quality: 0.7,
+      allowsEditing: false,
+    });
+    if (!result.canceled && result.assets?.[0]?.uri) {
+      setPackagePhotoUri(result.assets[0].uri);
+    }
+  };
+
+  const handleMarkPickedUp = async () => {
+    if (!packagePhotoUri || !onAccept) return;
+    setIsUploadingEvidence(true);
+    try {
+      const base64 = await FileSystem.readAsStringAsync(packagePhotoUri, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+      await imageAPI.uploadPackageEvidence(order.orderId, `data:image/jpeg;base64,${base64}`);
+      onAccept();
+    } catch (error: any) {
+      Alert.alert('Upload Failed', error.message || 'Could not upload package photo. Please try again.');
+    } finally {
+      setIsUploadingEvidence(false);
     }
   };
 
@@ -204,18 +243,62 @@ export function OrderCard({ order, onPress, onAccept, onReject, onStartDelivery,
       )}
 
       {isNewOrder && onAccept && (
-        <TouchableOpacity
-          style={styles.primaryAction}
-          onPress={(e) => {
-            e.stopPropagation();
-            onAccept();
-          }}
-          activeOpacity={0.85}
-        >
-          <CheckCircle size={20} color={riderTheme.colors.textInverse} strokeWidth={2.5} />
-          <Text style={styles.primaryActionText}>Mark as Picked Up</Text>
-          <ArrowRight size={18} color={riderTheme.colors.textInverse} strokeWidth={2.5} />
-        </TouchableOpacity>
+        <View style={styles.pickupEvidenceSection}>
+          {!hasStartedPickupProcess ? (
+            <TouchableOpacity
+              style={styles.primaryAction}
+              onPress={(e) => {
+                e.stopPropagation();
+                setHasStartedPickupProcess(true);
+                onStartPickupProcess?.();
+              }}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.primaryActionText}>Start Delivery Process</Text>
+            </TouchableOpacity>
+          ) : !packagePhotoUri ? (
+            <TouchableOpacity
+              style={styles.takePhotoButton}
+              onPress={(e) => { e.stopPropagation(); takePackagePhoto(); }}
+              activeOpacity={0.85}
+            >
+              <Camera size={20} color={riderTheme.colors.primary} strokeWidth={2.5} />
+              <Text style={styles.takePhotoText}>Take Package Photo</Text>
+            </TouchableOpacity>
+          ) : (
+            <>
+              <View style={styles.photoPreviewRow}>
+                <Image source={{ uri: packagePhotoUri }} style={styles.photoThumbnail} />
+                <View style={styles.photoPreviewInfo}>
+                  <Text style={styles.photoPreviewLabel}>Package photo captured</Text>
+                  <TouchableOpacity
+                    style={styles.retakeButton}
+                    onPress={(e) => { e.stopPropagation(); takePackagePhoto(); }}
+                    activeOpacity={0.8}
+                  >
+                    <RotateCcw size={14} color={riderTheme.colors.warning} strokeWidth={2.5} />
+                    <Text style={styles.retakeText}>Retake</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+              <TouchableOpacity
+                style={[styles.primaryAction, isUploadingEvidence && { opacity: 0.6 }]}
+                onPress={(e) => { e.stopPropagation(); handleMarkPickedUp(); }}
+                disabled={isUploadingEvidence}
+                activeOpacity={0.85}
+              >
+                {isUploadingEvidence ? (
+                  <ActivityIndicator size="small" color={riderTheme.colors.textInverse} />
+                ) : (
+                  <CheckCircle size={18} color={riderTheme.colors.textInverse} strokeWidth={2.5} />
+                )}
+                <Text style={styles.primaryActionText}>
+                  {isUploadingEvidence ? 'Uploading...' : 'Mark as Picked Up'}
+                </Text>
+              </TouchableOpacity>
+            </>
+          )}
+        </View>
       )}
 
       {isPickedUp && onStartDelivery && (
@@ -600,6 +683,61 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: riderTheme.colors.textInverse,
   },
+  pickupEvidenceSection: {
+    gap: 10,
+  },
+  takePhotoButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    paddingVertical: 14,
+    borderRadius: riderTheme.radius.lg,
+    borderWidth: 1.5,
+    borderColor: riderTheme.colors.primary,
+    borderStyle: 'dashed',
+    backgroundColor: riderTheme.colors.primarySoft,
+  },
+  takePhotoText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: riderTheme.colors.primary,
+  },
+  photoPreviewRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    padding: 10,
+    backgroundColor: riderTheme.colors.surfaceMuted,
+    borderRadius: riderTheme.radius.lg,
+    borderWidth: 1,
+    borderColor: riderTheme.colors.borderLight,
+  },
+  photoThumbnail: {
+    width: 56,
+    height: 56,
+    borderRadius: riderTheme.radius.md,
+  },
+  photoPreviewInfo: {
+    flex: 1,
+    gap: 6,
+  },
+  photoPreviewLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: riderTheme.colors.textPrimary,
+  },
+  retakeButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    alignSelf: 'flex-start',
+  },
+  retakeText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: riderTheme.colors.warning,
+  },
   primaryAction: {
     backgroundColor: riderTheme.colors.primary,
     paddingVertical: 14,
@@ -637,4 +775,3 @@ const styles = StyleSheet.create({
     color: riderTheme.colors.textInverse,
   },
 });
-

@@ -31,7 +31,7 @@ export default function OrdersScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { rider } = useAuth();
-  const { orders, activeOrders, completedOrders, riderRating, riderRatedCount, isLoading, isLoadingCompleted, refreshOrders, refreshCompletedOrders, acceptOrder, rejectOrder, updateOrderStatus } = useOrders();
+  const { orders, activeOrders, completedOrders, riderRating, riderRatedCount, isLoading, isLoadingCompleted, refreshOrders, refreshCompletedOrders, acceptOrder, rejectOrder, dismissOrderAlert, updateOrderStatus } = useOrders();
   const { isOnline, toggleOnline, currentLocation } = useLocation();
   const { showAlert, AlertComponent } = useThemedAlert();
   const [selectedTab, setSelectedTab] = useState<TabFilter>('active');
@@ -98,6 +98,14 @@ export default function OrdersScreen() {
       showAlert('Order Rejected', 'You have rejected the order.', undefined, 'info');
     } catch (error: any) {
       showAlert('Error', error.message || 'Failed to reject order', undefined, 'error');
+    }
+  };
+
+  const handleStartPickupProcess = async (orderId: string) => {
+    try {
+      await dismissOrderAlert(orderId);
+    } catch (error) {
+      console.error('Failed to dismiss order alert:', error);
     }
   };
 
@@ -273,6 +281,7 @@ export default function OrdersScreen() {
                   onReject={order.status === 'OFFERED_TO_RIDER' ? (reason?: string) => handleRejectOrder(order.orderId, reason) : undefined}
                   onStartDelivery={order.status === 'PICKED_UP' ? () => handleStartDelivery(order.orderId) : undefined}
                   onMarkDelivered={order.status === 'OUT_FOR_DELIVERY' ? () => handleMarkDelivered(order.orderId) : undefined}
+                  onStartPickupProcess={order.status === 'RIDER_ASSIGNED' ? () => handleStartPickupProcess(order.orderId) : undefined}
                   riderLocation={currentLocation || undefined}
                 />
               ))}

@@ -288,6 +288,19 @@ export const riderAuthAPI = {
     api.get<{ riderRating: number | null; riderRatedCount: number }>(`/api/v1/riders/${riderId}/rating`),
 };
 
+export const imageAPI = {
+  uploadPackageEvidence: async (orderId: string, imageBase64: string) => {
+    return api.post<{ images: { key: string; url: string }[] }>(
+      '/api/v1/images/upload',
+      {
+        listBase64: [imageBase64],
+        entity: 'PACKAGE_EVIDENCE',
+        orderId,
+      }
+    );
+  },
+};
+
 // Rider Order APIs
 export const riderOrderAPI = {
   getOrders: (riderId: string, status?: string) => {

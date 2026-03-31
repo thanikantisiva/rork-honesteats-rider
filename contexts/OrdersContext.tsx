@@ -3,11 +3,12 @@
  * Manages rider's assigned orders
  */
 
-import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react';
 import { riderOrderAPI, riderAuthAPI } from '@/lib/api';
 import { RiderOrder } from '@/types';
 import { useAuth } from './AuthContext';
 import { useLocation } from './LocationContext';
+import { startNewOrderAlert, stopNewOrderAlert, unloadNewOrderAlert } from '@/services/order-alert';
 
 interface OrdersContextType {
   orders: RiderOrder[];
@@ -21,6 +22,7 @@ interface OrdersContextType {
   refreshCompletedOrders: () => Promise<void>;
   acceptOrder: (orderId: string, status: string) => Promise<void>;
   rejectOrder: (orderId: string, reason: string) => Promise<void>;
+  dismissOrderAlert: (orderId: string) => Promise<void>;
   updateOrderStatus: (orderId: string, status: string, otp?: string) => Promise<void>;
 }
 
@@ -35,6 +37,41 @@ export function OrdersProvider({ children }: { children: ReactNode }) {
   const [riderRatedCount, setRiderRatedCount] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingCompleted, setIsLoadingCompleted] = useState(false);
+  const knownOrderIdsRef = useRef<Set<string>>(new Set());
+  const alertingOrderIdsRef = useRef<Set<string>>(new Set());
+  const hasFetchedOrdersRef = useRef(false);
+
+  const syncAlertPlayback = useCallback(async () => {
+    if (alertingOrderIdsRef.current.size > 0) {
+      await startNewOrderAlert();
+      return;
+    }
+
+    await stopNewOrderAlert();
+  }, []);
+
+  const clearAlertForOrder = useCallback(async (orderId: string) => {
+    if (!alertingOrderIdsRef.current.delete(orderId)) {
+      return;
+    }
+
+    await syncAlertPlayback();
+  }, [syncAlertPlayback]);
+
+  useEffect(() => {
+    if (!isLoggedIn || !rider) {
+      knownOrderIdsRef.current = new Set();
+      alertingOrderIdsRef.current = new Set();
+      hasFetchedOrdersRef.current = false;
+      stopNewOrderAlert().catch(() => undefined);
+    }
+  }, [isLoggedIn, rider]);
+
+  useEffect(() => {
+    return () => {
+      unloadNewOrderAlert().catch(() => undefined);
+    };
+  }, []);
 
   useEffect(() => {
     if (isLoggedIn && rider && isOnline) {
@@ -78,12 +115,42 @@ export function OrdersProvider({ children }: { children: ReactNode }) {
         ...pickedUpResponse.orders,
         ...outForDeliveryResponse.orders
       ];
+
+      const currentAlertableOrderIds = new Set(
+        allActiveOrders
+          .filter((order) => ['OFFERED_TO_RIDER', 'RIDER_ASSIGNED'].includes(order.status))
+          .map((order) => order.orderId)
+      );
+
+      const incomingAlertOrders = allActiveOrders.filter(
+        (order) =>
+          currentAlertableOrderIds.has(order.orderId) &&
+          !knownOrderIdsRef.current.has(order.orderId)
+      );
       
       setOrders(allActiveOrders);
       const rating = ratingResponse.riderRating != null && Number.isFinite(ratingResponse.riderRating) ? ratingResponse.riderRating : null;
       const count = Number.isFinite(ratingResponse.riderRatedCount) ? ratingResponse.riderRatedCount : 0;
       setRiderRating(rating);
       setRiderRatedCount(count);
+
+      if (hasFetchedOrdersRef.current) {
+        for (const order of incomingAlertOrders) {
+          alertingOrderIdsRef.current.add(order.orderId);
+        }
+      } else {
+        alertingOrderIdsRef.current = new Set(
+          [...alertingOrderIdsRef.current].filter((orderId) => currentAlertableOrderIds.has(orderId))
+        );
+      }
+
+      alertingOrderIdsRef.current = new Set(
+        [...alertingOrderIdsRef.current].filter((orderId) => currentAlertableOrderIds.has(orderId))
+      );
+
+      await syncAlertPlayback();
+      knownOrderIdsRef.current = new Set(allActiveOrders.map((order) => order.orderId));
+      hasFetchedOrdersRef.current = true;
       console.log(`📦 Fetched ${allActiveOrders.length} active orders for rider; rating=${rating}, count=${count}`);
     } catch (error) {
       console.error('Failed to fetch orders:', error);
@@ -97,26 +164,32 @@ export function OrdersProvider({ children }: { children: ReactNode }) {
 
     try {
       await riderOrderAPI.acceptOrder(rider.riderId, orderId, status);
+      await clearAlertForOrder(orderId);
       await refreshOrders();
       console.log(`✅ Order ${orderId} accepted`);
     } catch (error) {
       console.error('Failed to accept order:', error);
       throw error;
     }
-  }, [rider, refreshOrders]);
+  }, [rider, clearAlertForOrder, refreshOrders]);
 
   const rejectOrder = useCallback(async (orderId: string, reason: string) => {
     if (!rider) return;
 
     try {
       await riderOrderAPI.rejectOrder(rider.riderId, orderId, reason);
+      await clearAlertForOrder(orderId);
       await refreshOrders();
       console.log(`❌ Order ${orderId} rejected`);
     } catch (error) {
       console.error('Failed to reject order:', error);
       throw error;
     }
-  }, [rider, refreshOrders]);
+  }, [rider, clearAlertForOrder, refreshOrders]);
+
+  const dismissOrderAlert = useCallback(async (orderId: string) => {
+    await clearAlertForOrder(orderId);
+  }, [clearAlertForOrder]);
 
   const updateOrderStatus = useCallback(async (orderId: string, status: string, otp?: string) => {
     if (!rider) return;
@@ -173,6 +246,7 @@ export function OrdersProvider({ children }: { children: ReactNode }) {
         refreshCompletedOrders,
         acceptOrder,
         rejectOrder,
+        dismissOrderAlert,
         updateOrderStatus,
       }}
     >
