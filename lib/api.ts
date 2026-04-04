@@ -2,7 +2,7 @@ import * as FileSystem from 'expo-file-system';
 
 const DEV_BASE_URL = 'https://api.dev.yumdude.com';
 const PROD_BASE_URL = 'https://api.yumdude.com';
-const API_BASE_URL = PROD_BASE_URL;
+export const API_BASE_URL = PROD_BASE_URL;
 
 export interface APIResponse<T> {
   data?: T;

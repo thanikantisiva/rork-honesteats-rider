@@ -24,6 +24,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import { OrderCard } from '@/components/OrderCard';
 import { useThemedAlert } from '@/components/ThemedAlert';
 import { riderTheme } from '@/theme/riderTheme';
+import { useForceUpdate } from '@/hooks/useForceUpdate';
+import { ForceUpdateModal } from '@/components/ForceUpdateModal';
 
 type TabFilter = 'active' | 'completed';
 
@@ -34,6 +36,7 @@ export default function OrdersScreen() {
   const { orders, activeOrders, completedOrders, riderRating, riderRatedCount, isLoading, isLoadingCompleted, refreshOrders, refreshCompletedOrders, acceptOrder, rejectOrder, dismissOrderAlert, updateOrderStatus } = useOrders();
   const { isOnline, toggleOnline, currentLocation } = useLocation();
   const { showAlert, AlertComponent } = useThemedAlert();
+  const { needsUpdate, openStore } = useForceUpdate();
   const [selectedTab, setSelectedTab] = useState<TabFilter>('active');
   const [isTogglingOnline, setIsTogglingOnline] = useState(false);
   const [hasLoadedCompleted, setHasLoadedCompleted] = useState(false);
@@ -155,6 +158,7 @@ export default function OrdersScreen() {
 
   return (
     <>
+      <ForceUpdateModal visible={needsUpdate} onUpdate={openStore} />
       <Stack.Screen options={{ headerShown: false }} />
       <View style={styles.container}>
         {/* Modern Header */}
