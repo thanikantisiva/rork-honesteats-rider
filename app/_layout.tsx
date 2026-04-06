@@ -13,7 +13,6 @@ import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import { OrdersProvider } from '@/contexts/OrdersContext';
 import { LocationProvider } from '@/contexts/LocationContext';
 import { setupNotificationListeners, parseNotificationData, getLastNotificationResponse } from '@/services/firebase-messaging';
-import { useThemedAlert } from '@/components/ThemedAlert';
 import { StartupSplash } from '@/components/StartupSplash';
 import { riderTheme } from '@/theme/riderTheme';
 import appCheck from '@react-native-firebase/app-check';
@@ -55,20 +54,11 @@ function RootLayoutNav() {
   const { isLoggedIn, isLoading } = useAuth();
   const segments = useSegments();
   const router = useRouter();
-  const { showAlert, AlertComponent } = useThemedAlert();
   const [showStartupSplash, setShowStartupSplash] = useState(true);
 
   useEffect(() => {
     const handleNotificationReceived = (remoteMessage: any) => {
       console.log('FCM notification received (foreground - rider):', remoteMessage);
-      const data = parseNotificationData(remoteMessage.data);
-
-      if (data) {
-        showAlert(
-          remoteMessage.notification?.title || 'New Notification',
-          remoteMessage.notification?.body || data.message || 'You have a new update'
-        );
-      }
     };
 
     const handleNotificationOpened = (remoteMessage: any) => {
@@ -136,7 +126,6 @@ function RootLayoutNav() {
         <Stack.Screen name="order-details" options={{ headerShown: true, title: 'Order Details' }} />
       </Stack>
       {showStartupSplash && <StartupSplash onDone={() => setShowStartupSplash(false)} />}
-      <AlertComponent />
     </>
   );
 }

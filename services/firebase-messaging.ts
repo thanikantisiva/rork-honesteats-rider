@@ -5,6 +5,102 @@
 
 import messaging from '@react-native-firebase/messaging';
 import { PermissionsAndroid, Platform } from 'react-native';
+import notifee, { AndroidImportance, EventType } from '@notifee/react-native';
+
+export const RIDER_NOTIFICATION_CHANNEL_ID = 'rider_orders_ring';
+export const RIDER_NOTIFICATION_SOUND = 'new_order_ring';
+
+const DEFAULT_NOTIFICATION_TITLE = 'YumDude Rider';
+const DEFAULT_NOTIFICATION_BODY = 'You have a new update';
+
+export async function ensureNotificationChannel(): Promise<string> {
+  if (Platform.OS !== 'android') {
+    return RIDER_NOTIFICATION_CHANNEL_ID;
+  }
+
+  return notifee.createChannel({
+    id: RIDER_NOTIFICATION_CHANNEL_ID,
+    name: 'Rider Orders',
+    description: 'Order alerts and rider updates',
+    importance: AndroidImportance.HIGH,
+    sound: RIDER_NOTIFICATION_SOUND,
+    vibration: true,
+  });
+}
+
+function normalizeNotificationData(data: any): Record<string, string> {
+  if (!data || typeof data !== 'object') {
+    return {};
+  }
+
+  return Object.entries(data).reduce<Record<string, string>>((acc, [key, value]) => {
+    if (value === undefined || value === null) {
+      return acc;
+    }
+
+    acc[key] = String(value);
+    return acc;
+  }, {});
+}
+
+function getNotificationTitle(remoteMessage: any): string {
+  return (
+    remoteMessage?.notification?.title ||
+    remoteMessage?.data?.title ||
+    DEFAULT_NOTIFICATION_TITLE
+  );
+}
+
+function getNotificationBody(remoteMessage: any): string {
+  return (
+    remoteMessage?.notification?.body ||
+    remoteMessage?.data?.body ||
+    remoteMessage?.data?.message ||
+    DEFAULT_NOTIFICATION_BODY
+  );
+}
+
+function toOpenedMessage(notification: any) {
+  if (!notification) return null;
+
+  return {
+    data: notification.data || {},
+    notification: {
+      title: notification.title,
+      body: notification.body,
+    },
+  };
+}
+
+export async function displayNotificationFromRemoteMessage(remoteMessage: any): Promise<void> {
+  const title = getNotificationTitle(remoteMessage);
+  const body = getNotificationBody(remoteMessage);
+  const data = normalizeNotificationData(remoteMessage?.data);
+
+  if (!title && !body) {
+    return;
+  }
+
+  const channelId = await ensureNotificationChannel();
+
+  await notifee.displayNotification({
+    title,
+    body,
+    data,
+    android: {
+      channelId,
+      pressAction: {
+        id: 'default',
+      },
+      smallIcon: 'ic_launcher',
+      sound: RIDER_NOTIFICATION_SOUND,
+      importance: AndroidImportance.HIGH,
+    },
+    ios: {
+      sound: 'default',
+    },
+  });
+}
 
 /**
  * Request notification permission from user
@@ -25,6 +121,8 @@ export async function requestNotificationPermission(): Promise<boolean> {
         }
       }
 
+      await ensureNotificationChannel();
+
       console.log('✅ Android notification permission granted');
       return true;
     }
@@ -35,6 +133,7 @@ export async function requestNotificationPermission(): Promise<boolean> {
       authStatus === messaging.AuthorizationStatus.PROVISIONAL;
 
     if (enabled) {
+      await notifee.requestPermission();
       console.log('✅ iOS notification permission granted:', authStatus);
     } else {
       console.log('❌ iOS notification permission denied');
@@ -109,10 +208,12 @@ export function setupNotificationListeners(
   onNotificationOpened: (message: any) => void
 ): () => void {
   console.log('🔔 Setting up notification listeners for rider app...');
+  void ensureNotificationChannel();
 
   // Foreground notification handler
   const unsubscribeForeground = messaging().onMessage(async (remoteMessage) => {
     console.log('📬 FCM notification received (foreground - rider):', remoteMessage);
+    await displayNotificationFromRemoteMessage(remoteMessage);
     onNotificationReceived(remoteMessage);
   });
 
@@ -132,6 +233,18 @@ export function setupNotificationListeners(
       }
     });
 
+  const unsubscribeNotifeeForeground = notifee.onForegroundEvent(({ type, detail }) => {
+    if (type !== EventType.PRESS && type !== EventType.ACTION_PRESS) {
+      return;
+    }
+
+    const openedMessage = toOpenedMessage(detail.notification);
+    if (openedMessage) {
+      console.log('👆 Local notification opened in foreground (rider):', openedMessage);
+      onNotificationOpened(openedMessage);
+    }
+  });
+
   console.log('✅ Notification listeners setup complete');
 
   // Return cleanup function
@@ -139,6 +252,7 @@ export function setupNotificationListeners(
     console.log('🧹 Cleaning up notification listeners');
     unsubscribeForeground();
     unsubscribeBackground();
+    unsubscribeNotifeeForeground();
   };
 }
 
@@ -162,7 +276,12 @@ export function parseNotificationData(data: any) {
 export async function getLastNotificationResponse() {
   try {
     const remoteMessage = await messaging().getInitialNotification();
-    return remoteMessage;
+    if (remoteMessage) {
+      return remoteMessage;
+    }
+
+    const initialNotification = await notifee.getInitialNotification();
+    return toOpenedMessage(initialNotification?.notification);
   } catch (error) {
     console.error('❌ Error getting initial notification:', error);
     return null;
