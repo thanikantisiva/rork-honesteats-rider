@@ -4,8 +4,10 @@
  */
 
 import messaging from '@react-native-firebase/messaging';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { PermissionsAndroid, Platform } from 'react-native';
 import notifee, { AndroidImportance, EventType } from '@notifee/react-native';
+import { userAPI } from '@/lib/api';
 
 export const RIDER_NOTIFICATION_CHANNEL_ID = 'rider_orders_ring';
 export const RIDER_NOTIFICATION_SOUND = 'new_order_ring';
@@ -203,6 +205,24 @@ export async function unsubscribeFromTopic(topic: string): Promise<void> {
  * Setup notification listeners
  * Returns cleanup function
  */
+/**
+ * Re-register FCM token with backend when Firebase rotates it (avoids silent push loss).
+ */
+export function setupFCMTokenRefreshListener(): () => void {
+  return messaging().onTokenRefresh(async (newToken) => {
+    try {
+      const phone = await AsyncStorage.getItem('@rider_phone');
+      if (!phone || !newToken) {
+        return;
+      }
+      await userAPI.registerFCMToken(phone, newToken);
+      console.log('✅ Refreshed FCM token registered with backend');
+    } catch (error) {
+      console.error('Failed to register refreshed FCM token:', error);
+    }
+  });
+}
+
 export function setupNotificationListeners(
   onNotificationReceived: (message: any) => void,
   onNotificationOpened: (message: any) => void

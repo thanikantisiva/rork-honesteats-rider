@@ -3,7 +3,7 @@
  * Modern premium order card with gradient accents
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { StyleSheet, Text, View, TouchableOpacity, TextInput, Alert, Modal, Image, ActivityIndicator } from 'react-native';
 import { MapPin, Home, Package, IndianRupee, Navigation, CheckCircle, Truck, Lock, ArrowRight, Camera, RotateCcw } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
@@ -11,7 +11,7 @@ import * as FileSystem from 'expo-file-system';
 import { RiderOrder } from '@/types';
 import { StatusBadge } from './StatusBadge';
 import { formatDistance, calculateDistance } from '@/utils/distance';
-import { imageAPI } from '@/lib/api';
+import { imageAPI, locationAPI } from '@/lib/api';
 import { riderTheme } from '@/theme/riderTheme';
 
 function asFiniteNumber(v: unknown): number | undefined {
@@ -63,15 +63,57 @@ export function OrderCard({ order, onPress, onAccept, onReject, onStartPickupPro
   const [isUploadingEvidence, setIsUploadingEvidence] = useState(false);
   const [hasStartedPickupProcess, setHasStartedPickupProcess] = useState(false);
 
-  let distanceToPickup: number | undefined;
-  if (riderLocation && order.pickupLat && order.pickupLng) {
-    distanceToPickup = calculateDistance(
-      riderLocation.lat,
-      riderLocation.lng,
-      order.pickupLat,
-      order.pickupLng
-    );
-  }
+  /** Pickup distance: backend road distance (POST /api/v1/location/distance), Haversine fallback on error */
+  const [distanceToPickupKm, setDistanceToPickupKm] = useState<number | undefined>(undefined);
+  const [distanceToPickupLoading, setDistanceToPickupLoading] = useState(false);
+
+  useEffect(() => {
+    if (!riderLocation || order.pickupLat == null || order.pickupLng == null) {
+      setDistanceToPickupKm(undefined);
+      setDistanceToPickupLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    const fallbackKm = () =>
+      calculateDistance(
+        riderLocation.lat,
+        riderLocation.lng,
+        order.pickupLat!,
+        order.pickupLng!
+      );
+
+    setDistanceToPickupLoading(true);
+    const debounceMs = 400;
+    const timer = setTimeout(() => {
+      void (async () => {
+        try {
+          const res = await locationAPI.getDistance(
+            riderLocation.lat,
+            riderLocation.lng,
+            order.pickupLat!,
+            order.pickupLng!
+          );
+          const km =
+            typeof res.distanceKm === 'number' && Number.isFinite(res.distanceKm)
+              ? Math.round(res.distanceKm * 10) / 10
+              : fallbackKm();
+          if (!cancelled) setDistanceToPickupKm(km);
+        } catch (e) {
+          console.warn('[OrderCard] distance API failed, using Haversine', e);
+          if (!cancelled) setDistanceToPickupKm(fallbackKm());
+        } finally {
+          if (!cancelled) setDistanceToPickupLoading(false);
+        }
+      })();
+    }, debounceMs);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+      setDistanceToPickupLoading(false);
+    };
+  }, [riderLocation?.lat, riderLocation?.lng, order.pickupLat, order.pickupLng]);
 
   const handleConfirmOtp = () => {
     if (!order.deliveryOtp) {
@@ -168,10 +210,14 @@ export function OrderCard({ order, onPress, onAccept, onReject, onStartPickupPro
               </Text>
             )}
           </View>
-          {distanceToPickup !== undefined && (
+          {riderLocation && order.pickupLat != null && order.pickupLng != null && (
             <View style={styles.distanceBadge}>
               <Navigation size={11} color={riderTheme.colors.success} strokeWidth={2.5} />
-              <Text style={styles.distanceText}>{formatDistance(distanceToPickup)}</Text>
+              {distanceToPickupLoading ? (
+                <ActivityIndicator size="small" color={riderTheme.colors.success} style={styles.distanceSpinner} />
+              ) : distanceToPickupKm !== undefined ? (
+                <Text style={styles.distanceText}>{formatDistance(distanceToPickupKm)}</Text>
+              ) : null}
             </View>
           )}
         </View>
@@ -495,6 +541,9 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
     color: riderTheme.colors.successDark,
+  },
+  distanceSpinner: {
+    transform: [{ scale: 0.75 }],
   },
   connectorLine: {
     width: 2,

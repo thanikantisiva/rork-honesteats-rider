@@ -1,5 +1,19 @@
 import { Audio, InterruptionModeAndroid, InterruptionModeIOS } from 'expo-av';
-import { Vibration } from 'react-native';
+import { AppState, Vibration } from 'react-native';
+
+function isAudioFocusBackgroundError(error: unknown): boolean {
+  const msg =
+    error instanceof Error
+      ? error.message
+      : typeof error === 'object' && error !== null && 'message' in error
+        ? String((error as { message: unknown }).message)
+        : String(error);
+  return (
+    msg.includes('AudioFocusNotAcquired') ||
+    msg.includes('in the background') ||
+    msg.includes('audio focus could not be acquired')
+  );
+}
 
 let ringSound: Audio.Sound | null = null;
 let soundPromise: Promise<Audio.Sound | null> | null = null;
@@ -43,6 +57,11 @@ async function getRingSound(): Promise<Audio.Sound | null> {
 }
 
 export async function startNewOrderAlert(): Promise<void> {
+  // expo-av cannot acquire audio focus while the app is backgrounded
+  if (AppState.currentState !== 'active') {
+    return;
+  }
+
   try {
     const sound = await getRingSound();
     if (!sound) {
@@ -60,6 +79,9 @@ export async function startNewOrderAlert(): Promise<void> {
     await sound.playAsync();
     isAlertPlaying = true;
   } catch (error) {
+    if (isAudioFocusBackgroundError(error)) {
+      return;
+    }
     console.error('Failed to start new order alert:', error);
   }
 }

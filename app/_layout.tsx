@@ -12,7 +12,12 @@ import { StatusBar } from 'expo-status-bar';
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import { OrdersProvider } from '@/contexts/OrdersContext';
 import { LocationProvider } from '@/contexts/LocationContext';
-import { setupNotificationListeners, parseNotificationData, getLastNotificationResponse } from '@/services/firebase-messaging';
+import {
+  setupNotificationListeners,
+  setupFCMTokenRefreshListener,
+  parseNotificationData,
+  getLastNotificationResponse,
+} from '@/services/firebase-messaging';
 import { StartupSplash } from '@/components/StartupSplash';
 import { riderTheme } from '@/theme/riderTheme';
 import appCheck from '@react-native-firebase/app-check';
@@ -78,12 +83,16 @@ function RootLayoutNav() {
       }
     });
 
-    const unsubscribe = setupNotificationListeners(
+    const unsubscribeListeners = setupNotificationListeners(
       handleNotificationReceived,
       handleNotificationOpened
     );
+    const unsubscribeTokenRefresh = setupFCMTokenRefreshListener();
 
-    return unsubscribe;
+    return () => {
+      unsubscribeListeners();
+      unsubscribeTokenRefresh();
+    };
   }, [router]);
 
   useEffect(() => {

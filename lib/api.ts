@@ -208,7 +208,7 @@ export const userAPI = {
    */
   registerFCMToken: async (phone: string, fcmToken: string): Promise<{ message: string }> => {
     console.log(`[API] Registering FCM token for: ${phone}`);
-    return api.post(`/api/v1/users/${phone}/fcm-token`, { fcmToken });
+    return api.post(`/api/v1/users/${phone}/fcm-token`, { fcmToken, role: 'RIDER' });
   },
 
   /**
@@ -299,6 +299,28 @@ export const imageAPI = {
       }
     );
   },
+};
+
+/** Road distance via backend (Google Directions when configured; else Haversine on server) */
+export const locationAPI = {
+  getDistance: (
+    fromLat: number,
+    fromLng: number,
+    toLat: number,
+    toLng: number
+  ): Promise<{
+    fromLat: number;
+    fromLng: number;
+    toLat: number;
+    toLng: number;
+    distanceKm: number;
+  }> =>
+    api.post('/api/v1/location/distance', {
+      fromLat,
+      fromLng,
+      toLat,
+      toLng,
+    }),
 };
 
 // Rider Order APIs
