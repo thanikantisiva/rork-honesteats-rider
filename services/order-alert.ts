@@ -18,6 +18,13 @@ function isAudioFocusBackgroundError(error: unknown): boolean {
 let ringSound: Audio.Sound | null = null;
 let soundPromise: Promise<Audio.Sound | null> | null = null;
 let isAlertPlaying = false;
+/** Consumed once: skips the next startNewOrderAlert (used when app returns to foreground after push). */
+let shouldSkipNextInAppOrderAlertStart = false;
+
+/** Call when the user brings the app to the foreground so push-driven looping can stop without immediately re-starting expo-av on the same refresh. */
+export function requestSkipNextInAppOrderAlertStart(): void {
+  shouldSkipNextInAppOrderAlertStart = true;
+}
 
 async function getRingSound(): Promise<Audio.Sound | null> {
   if (ringSound) {
@@ -34,7 +41,8 @@ async function getRingSound(): Promise<Audio.Sound | null> {
           shouldDuckAndroid: true,
           interruptionModeAndroid: InterruptionModeAndroid.DuckOthers,
           playThroughEarpieceAndroid: false,
-          staysActiveInBackground: false,
+          // Allows the in-app ring to continue if the app is backgrounded before the rider opens it fully.
+          staysActiveInBackground: true,
         });
 
         const { sound } = await Audio.Sound.createAsync(
@@ -59,6 +67,11 @@ async function getRingSound(): Promise<Audio.Sound | null> {
 export async function startNewOrderAlert(): Promise<void> {
   // expo-av cannot acquire audio focus while the app is backgrounded
   if (AppState.currentState !== 'active') {
+    return;
+  }
+
+  if (shouldSkipNextInAppOrderAlertStart) {
+    shouldSkipNextInAppOrderAlertStart = false;
     return;
   }
 

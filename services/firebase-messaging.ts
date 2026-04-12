@@ -5,15 +5,24 @@
 
 import messaging from '@react-native-firebase/messaging';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { PermissionsAndroid, Platform } from 'react-native';
+import { Image, PermissionsAndroid, Platform } from 'react-native';
 import notifee, { AndroidImportance, EventType } from '@notifee/react-native';
 import { userAPI } from '@/lib/api';
 
 export const RIDER_NOTIFICATION_CHANNEL_ID = 'rider_orders_ring_v2';
+/**
+ * Android: res/raw/new_order_ring.wav (sync from assets/sounds/new-order-ring.wav).
+ * iOS: HonestEatsRider/new_order_ring.wav in Xcode bundle — name without extension for Notifee.
+ */
 export const RIDER_NOTIFICATION_SOUND = 'new_order_ring';
+/** Secondary channel; same custom ring as main (all rider pushes use new-order-ring.wav). */
+export const RIDER_ORDER_UPDATES_CHANNEL_ID = 'rider_order_updates';
 
 const DEFAULT_NOTIFICATION_TITLE = 'YumDude Rider';
 const DEFAULT_NOTIFICATION_BODY = 'You have a new update';
+
+/** Same asset as app.json "icon" — used for notification large icon / iOS thumbnail. */
+const RIDER_APP_ICON = require('../assets/images/icon.png');
 
 export async function ensureNotificationChannel(): Promise<string> {
   if (Platform.OS === 'ios') {
@@ -38,6 +47,31 @@ export async function ensureNotificationChannel(): Promise<string> {
     sound: RIDER_NOTIFICATION_SOUND,
     vibration: true,
   });
+}
+
+export async function ensureOrderUpdatesChannel(): Promise<string> {
+  if (Platform.OS === 'ios') {
+    return RIDER_NOTIFICATION_CHANNEL_ID;
+  }
+  return notifee.createChannel({
+    id: RIDER_ORDER_UPDATES_CHANNEL_ID,
+    name: 'Order updates',
+    description: 'Rider order updates',
+    importance: AndroidImportance.HIGH,
+    sound: RIDER_NOTIFICATION_SOUND,
+    vibration: true,
+  });
+}
+
+async function resolveRiderNotificationChannel(data: Record<string, string>): Promise<string> {
+  // order_accepted: same high-priority channel + custom ring as order_assigned
+  if (data.type === 'order_accepted') {
+    return ensureNotificationChannel();
+  }
+  if (data.channelId === RIDER_ORDER_UPDATES_CHANNEL_ID) {
+    return ensureOrderUpdatesChannel();
+  }
+  return ensureNotificationChannel();
 }
 
 function normalizeNotificationData(data: any): Record<string, string> {
@@ -84,6 +118,27 @@ function toOpenedMessage(notification: any) {
   };
 }
 
+/** Stop Android looping notification sounds (Notifee ongoing + loopSound) for rider order pushes. */
+export async function cancelRiderLoopingPushNotifications(): Promise<void> {
+  if (Platform.OS !== 'android') {
+    return;
+  }
+  try {
+    const displayed = await notifee.getDisplayedNotifications();
+    for (const entry of displayed) {
+      const t = entry.notification?.data?.type;
+      if (t === 'order_assigned' || t === 'order_accepted') {
+        const nid = entry.id;
+        if (nid) {
+          await notifee.cancelDisplayedNotification(nid);
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('cancelRiderLoopingPushNotifications:', e);
+  }
+}
+
 export async function displayNotificationFromRemoteMessage(remoteMessage: any): Promise<void> {
   const title = getNotificationTitle(remoteMessage);
   const body = getNotificationBody(remoteMessage);
@@ -93,10 +148,41 @@ export async function displayNotificationFromRemoteMessage(remoteMessage: any): 
     return;
   }
 
-  const channelId = await ensureNotificationChannel();
+  const channelId = await resolveRiderNotificationChannel(data);
   const isOrderAssigned = data.type === 'order_assigned';
+  const isOrderAccepted = data.type === 'order_accepted';
+  // Android: loop sound until the user opens the app (we cancel displayed notifs on AppState active).
+  const useLoopingRiderAlert = isOrderAssigned || isOrderAccepted;
+  const notificationId = data.orderId
+    ? `rider-push-${data.orderId}`
+    : `rider-push-${data.type || 'order'}`;
+
+  // Notifee validates ios.categoryId — omit property when unset (undefined throws on iOS).
+  const ios: {
+    sound: string;
+    categoryId?: string;
+    attachments?: { id: string; url: string; typeHint: string }[];
+  } = {
+    sound: RIDER_NOTIFICATION_SOUND,
+  };
+  if (isOrderAssigned) {
+    ios.categoryId = 'ORDER_ASSIGNED';
+  }
+  if (Platform.OS === 'ios') {
+    try {
+      const src = Image.resolveAssetSource(RIDER_APP_ICON);
+      if (src?.uri) {
+        ios.attachments = [
+          { id: 'rider-app-icon', url: src.uri, typeHint: 'public.png' },
+        ];
+      }
+    } catch {
+      // ignore — notification still shows without thumbnail
+    }
+  }
 
   await notifee.displayNotification({
+    id: notificationId,
     title,
     body,
     data,
@@ -119,14 +205,17 @@ export async function displayNotificationFromRemoteMessage(remoteMessage: any): 
             },
           ]
         : undefined,
-      smallIcon: 'ic_launcher',
+      // drawable/ic_rider_notification_small.xml → @mipmap/ic_launcher_foreground (matches adaptive icon art)
+      smallIcon: 'ic_rider_notification_small',
+      largeIcon: RIDER_APP_ICON,
+      circularLargeIcon: true,
+      color: '#FF6B35',
       sound: RIDER_NOTIFICATION_SOUND,
       importance: AndroidImportance.HIGH,
+      ongoing: useLoopingRiderAlert,
+      loopSound: useLoopingRiderAlert,
     },
-    ios: {
-      sound: isOrderAssigned ? RIDER_NOTIFICATION_SOUND : 'default',
-      categoryId: isOrderAssigned ? 'ORDER_ASSIGNED' : undefined,
-    },
+    ios,
   });
 }
 
@@ -198,6 +287,36 @@ export async function getFCMToken(): Promise<string | null> {
     console.error('❌ Error code:', error.code);
     console.error('❌ Error message:', error.message);
     return null;
+  }
+}
+
+/**
+ * Request notification permission, read the current FCM token, and POST it to the backend.
+ * Call when the rider goes online (and on session restore while online) so every session
+ * stores the latest token after reinstall, data clear, or Firebase rotation.
+ */
+export async function syncRiderFcmTokenToBackend(phone: string): Promise<void> {
+  const trimmed = (phone || '').trim();
+  if (!trimmed) {
+    console.warn('⚠️ syncRiderFcmTokenToBackend: missing phone');
+    return;
+  }
+  try {
+    const hasPermission = await requestNotificationPermission();
+    if (!hasPermission) {
+      console.warn('⚠️ Notification permission not granted — FCM sync skipped');
+      return;
+    }
+    await ensureNotificationChannel();
+    const fcmToken = await getFCMToken();
+    if (!fcmToken) {
+      console.warn('⚠️ No FCM token — sync skipped');
+      return;
+    }
+    await userAPI.registerFCMToken(trimmed, fcmToken);
+    console.log('✅ FCM token synced to backend for rider');
+  } catch (error) {
+    console.error('Failed to sync FCM token to backend:', error);
   }
 }
 

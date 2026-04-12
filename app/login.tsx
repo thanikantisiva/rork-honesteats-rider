@@ -19,8 +19,8 @@ import { useRouter, Stack } from 'expo-router';
 import { Phone, ArrowRight, ShieldCheck } from 'lucide-react-native';
 import { useThemedAlert } from '@/components/ThemedAlert';
 import { useAuth } from '@/contexts/AuthContext';
-import { riderAuthAPI, userAPI, authOTPAPI, setApiBaseUrlForPhone,api } from '@/lib/api';
-import { requestNotificationPermission, getFCMToken } from '@/services/firebase-messaging';
+import { riderAuthAPI, authOTPAPI, setApiBaseUrlForPhone, api } from '@/lib/api';
+import { syncRiderFcmTokenToBackend } from '@/services/firebase-messaging';
 import * as Location from 'expo-location';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { YumDudeLogo } from '@/components/YumDudeLogo';
@@ -169,7 +169,7 @@ export default function LoginScreen() {
       // Request both permissions NOW while the login screen is still fully in
       // the foreground. Calling these after login() triggers navigation to /(tabs)
       // and Android silently drops permission dialogs during activity transitions.
-      await registerFCMToken(riderData.phone);
+      await registerFCMTokenAfterLocationPrompt(riderData.phone);
 
       await login(riderData);
       console.log('✅ Logged in successfully, redirecting to home...');
@@ -180,23 +180,11 @@ export default function LoginScreen() {
     }
   };
 
-  const registerFCMToken = async (phone: string) => {
+  const registerFCMTokenAfterLocationPrompt = async (phone: string) => {
     try {
       // Request location permission upfront — independent of notification permission
       await Location.requestForegroundPermissionsAsync();
-
-      const hasPermission = await requestNotificationPermission();
-      if (!hasPermission) {
-        return;
-      }
-
-      const fcmToken = await getFCMToken();
-
-      if (!fcmToken) {
-        return;
-      }
-
-      await userAPI.registerFCMToken(phone, fcmToken);
+      await syncRiderFcmTokenToBackend(phone);
     } catch (error: any) {
       console.error('Failed to register FCM token:', error);
     }

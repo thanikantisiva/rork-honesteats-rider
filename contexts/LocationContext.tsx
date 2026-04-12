@@ -16,6 +16,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback, use
 import * as Location from 'expo-location';
 import * as TaskManager from 'expo-task-manager';
 import { riderStatusAPI } from '@/lib/api';
+import { syncRiderFcmTokenToBackend } from '@/services/firebase-messaging';
 import { useAuth } from './AuthContext';
 import { BACKGROUND_LOCATION_TASK } from '@/tasks/background-location';
 
@@ -55,6 +56,7 @@ export function LocationProvider({ children }: { children: ReactNode }) {
       .then((data) => {
         if (data.isActive) {
           setIsOnline(true);
+          void syncRiderFcmTokenToBackend(rider.phone);
           // Also resume tracking if rider was left online
           void startTracking();
         }
@@ -199,6 +201,8 @@ export function LocationProvider({ children }: { children: ReactNode }) {
 
         const { status } = await Location.requestForegroundPermissionsAsync();
         if (status !== 'granted') throw new Error('Location permission not granted');
+
+        await syncRiderFcmTokenToBackend(rider.phone);
 
         const snapshot = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
         const { latitude, longitude } = snapshot.coords;

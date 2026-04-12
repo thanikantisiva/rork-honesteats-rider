@@ -5,6 +5,7 @@
 import { Stack, useRouter, useSegments } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import React, { useEffect, useRef, useState } from 'react';
+import { AppState } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -17,7 +18,9 @@ import {
   setupFCMTokenRefreshListener,
   parseNotificationData,
   getLastNotificationResponse,
+  cancelRiderLoopingPushNotifications,
 } from '@/services/firebase-messaging';
+import { stopNewOrderAlert, requestSkipNextInAppOrderAlertStart } from '@/services/order-alert';
 import { StartupSplash } from '@/components/StartupSplash';
 import { riderTheme } from '@/theme/riderTheme';
 import appCheck from '@react-native-firebase/app-check';
@@ -79,7 +82,7 @@ function RootLayoutNav() {
       console.log('FCM notification received (foreground - rider):', remoteMessage);
       // Immediately refresh orders so the new offer appears without waiting for the 30s poll
       const type = remoteMessage?.data?.type;
-      if (type === 'order_assigned') {
+      if (type === 'order_assigned' || type === 'order_accepted') {
         void refreshOrdersRef.current(true);
       }
     };
@@ -135,6 +138,18 @@ function RootLayoutNav() {
       unsubscribeTokenRefresh();
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps — intentionally one-time; refs stay fresh
+
+  // When the rider opens the app: stop looping push sounds (Android) and in-app ring; then refresh orders.
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state !== 'active') return;
+      requestSkipNextInAppOrderAlertStart();
+      void cancelRiderLoopingPushNotifications();
+      void stopNewOrderAlert();
+      void refreshOrdersRef.current(true);
+    });
+    return () => sub.remove();
+  }, []);
 
   useEffect(() => {
     if (isLoading) return;

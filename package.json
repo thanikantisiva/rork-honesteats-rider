@@ -6,7 +6,8 @@
     "start": "expo start",
     "android": "expo run:android",
     "ios": "expo run:ios",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "sync-notification-sound": "cp assets/sounds/new-order-ring.wav android/app/src/main/res/raw/new_order_ring.wav && cp assets/sounds/new-order-ring.wav ios/HonestEatsRider/new_order_ring.wav"
   },
   "dependencies": {
     "@notifee/react-native": "^9.1.8",
