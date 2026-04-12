@@ -2,7 +2,7 @@
     "expo":  {
                  "name":  "YumDude Rider",
                  "slug":  "yumdude-rider",
-                 "version":  "1.0.3",
+                 "version":  "1.0.4",
                  "orientation":  "portrait",
                  "icon":  "./assets/images/icon.png",
                  "scheme":  "rork-rider",
@@ -33,7 +33,7 @@
                                                       "foregroundImage":  "./assets/images/adaptive-icon.png",
                                                       "backgroundColor":  "#FFFFFF"
                                                   },
-                                 "versionCode":  3,
+                                 "versionCode":  4,
                                  "package":  "app.rork.honesteats.rider",
                                  "googleServicesFile":  "./google-services.json",
                                  "softwareKeyboardLayoutMode":  "pan",
