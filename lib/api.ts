@@ -347,6 +347,9 @@ export const riderStatusAPI = {
 
   toggleStatus: (riderId: string, isActive: boolean, lat?: number, lng?: number) =>
     api.put<any>(`/api/v1/riders/${riderId}/status`, { isActive, lat, lng }),
+
+  getStatus: (riderId: string) =>
+    api.get<{ isActive: boolean; lat?: number; lng?: number }>(`/api/v1/riders/${riderId}`),
 };
 
 // Rider Earnings APIs

@@ -4,13 +4,13 @@
 
 import { Stack, useRouter, useSegments } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { StatusBar } from 'expo-status-bar';
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
-import { OrdersProvider } from '@/contexts/OrdersContext';
+import { OrdersProvider, useOrders } from '@/contexts/OrdersContext';
 import { LocationProvider } from '@/contexts/LocationContext';
 import {
   setupNotificationListeners,
@@ -57,25 +57,65 @@ const queryClient = new QueryClient();
 
 function RootLayoutNav() {
   const { isLoggedIn, isLoading } = useAuth();
+  const { refreshOrders, acceptOrder, rejectOrder } = useOrders();
   const segments = useSegments();
   const router = useRouter();
   const [showStartupSplash, setShowStartupSplash] = useState(true);
 
+  // Refs — prevent stale closures inside the one-time notification listener setup
+  const refreshOrdersRef = useRef(refreshOrders);
+  const acceptOrderRef = useRef(acceptOrder);
+  const rejectOrderRef = useRef(rejectOrder);
+  const routerRef = useRef(router);
+
+  useEffect(() => { refreshOrdersRef.current = refreshOrders; }, [refreshOrders]);
+  useEffect(() => { acceptOrderRef.current = acceptOrder; }, [acceptOrder]);
+  useEffect(() => { rejectOrderRef.current = rejectOrder; }, [rejectOrder]);
+  useEffect(() => { routerRef.current = router; }, [router]);
+
   useEffect(() => {
+    // FCM arrived while app is in foreground
     const handleNotificationReceived = (remoteMessage: any) => {
       console.log('FCM notification received (foreground - rider):', remoteMessage);
-    };
-
-    const handleNotificationOpened = (remoteMessage: any) => {
-      console.log('FCM notification opened (rider):', remoteMessage);
-      const data = parseNotificationData(remoteMessage.data);
-
-      if (data && data.orderId) {
-        console.log('Navigating to order:', data.orderId);
-        router.push(`/order-details?orderId=${data.orderId}` as any);
+      // Immediately refresh orders so the new offer appears without waiting for the 30s poll
+      const type = remoteMessage?.data?.type;
+      if (type === 'order_assigned') {
+        void refreshOrdersRef.current(true);
       }
     };
 
+    // Notification tapped (regular press — navigate to order details)
+    const handleNotificationOpened = (remoteMessage: any) => {
+      console.log('FCM notification opened (rider):', remoteMessage);
+      const data = parseNotificationData(remoteMessage.data);
+      if (data?.orderId) {
+        console.log('Navigating to order:', data.orderId);
+        routerRef.current.push(`/order-details?orderId=${data.orderId}` as any);
+      }
+    };
+
+    // Action button tapped (Accept / Reject) while app is in foreground
+    const handleActionPress = async (actionId: string, data: Record<string, string>) => {
+      const orderId = data.orderId;
+      if (!orderId) return;
+
+      if (actionId === 'ACCEPT_ORDER') {
+        try {
+          await acceptOrderRef.current(orderId, 'OFFERED_TO_RIDER');
+          routerRef.current.push(`/order-details?orderId=${orderId}` as any);
+        } catch (err) {
+          console.error('Failed to accept order from notification:', err);
+        }
+      } else if (actionId === 'REJECT_ORDER') {
+        try {
+          await rejectOrderRef.current(orderId, 'declined_via_notification');
+        } catch (err) {
+          console.error('Failed to reject order from notification:', err);
+        }
+      }
+    };
+
+    // Handle taps that launched the app from a killed/background state
     getLastNotificationResponse().then((remoteMessage) => {
       if (remoteMessage) {
         console.log('App opened from FCM notification (rider):', remoteMessage);
@@ -85,7 +125,8 @@ function RootLayoutNav() {
 
     const unsubscribeListeners = setupNotificationListeners(
       handleNotificationReceived,
-      handleNotificationOpened
+      handleNotificationOpened,
+      handleActionPress,
     );
     const unsubscribeTokenRefresh = setupFCMTokenRefreshListener();
 
@@ -93,7 +134,7 @@ function RootLayoutNav() {
       unsubscribeListeners();
       unsubscribeTokenRefresh();
     };
-  }, [router]);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps — intentionally one-time; refs stay fresh
 
   useEffect(() => {
     if (isLoading) return;

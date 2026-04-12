@@ -1,231 +1,236 @@
 /**
  * Location Context for Rider App
- * Redesigned for efficient location tracking:
- * 1. Single API call when going online (isActive=true, lat, lng)
- * 2. Location updates every 15s ONLY if location changed
- * 3. Single API call when going offline (isActive=false, lat, lng)
+ *
+ * OS-level background tracking via expo-task-manager + expo-location:
+ *  • Android: Foreground Service — survives backgrounding and screen lock
+ *  • iOS: Background location mode (shows blue bar in status bar)
+ *
+ * Three-layer approach:
+ *  1. OS background task    — continues when JS thread is suspended
+ *  2. Foreground subscription — keeps UI state fresh while app is visible
+ *  3. Heartbeat (25 s)       — keeps lastSeen fresh even when stationary
+ *     (uses refs, NOT state, to avoid the stale-closure bug)
  */
 
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react';
 import * as Location from 'expo-location';
+import * as TaskManager from 'expo-task-manager';
 import { riderStatusAPI } from '@/lib/api';
 import { useAuth } from './AuthContext';
+import { BACKGROUND_LOCATION_TASK } from '@/tasks/background-location';
 
 interface LocationContextType {
   currentLocation: { lat: number; lng: number } | null;
   isOnline: boolean;
   isTracking: boolean;
   toggleOnline: () => Promise<void>;
-  goOffline: () => Promise<void>; // For logout/app close
+  goOffline: () => Promise<void>;
 }
 
 const LocationContext = createContext<LocationContextType | undefined>(undefined);
 
-// Helper to calculate distance between two coordinates (in meters)
-function getDistanceInMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
-  const R = 6371e3; // Earth's radius in meters
-  const φ1 = (lat1 * Math.PI) / 180;
-  const φ2 = (lat2 * Math.PI) / 180;
-  const Δφ = ((lat2 - lat1) * Math.PI) / 180;
-  const Δλ = ((lng2 - lng1) * Math.PI) / 180;
-
-  const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
-    Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-
-  return R * c;
-}
+/** Must be less than RIDER_LAST_SEEN_STALE_SECONDS on the backend (currently 90 s). */
+const HEARTBEAT_INTERVAL_MS = 25_000;
 
 export function LocationProvider({ children }: { children: ReactNode }) {
   const { rider, isLoggedIn } = useAuth();
   const [currentLocation, setCurrentLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [isOnline, setIsOnline] = useState(false);
   const [isTracking, setIsTracking] = useState(false);
-  
-  // Store previous location in ref to compare
-  const previousLocationRef = useRef<{ lat: number; lng: number } | null>(null);
-  const locationSubscriptionRef = useRef<Location.LocationSubscription | null>(null);
-  const locationUpdateIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Cleanup on unmount or when logged out
+  // Refs — always have the latest value inside setInterval (no stale-closure)
+  const currentLocationRef = useRef<{ lat: number; lng: number } | null>(null);
+  const riderRef = useRef(rider);
+  const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const fgSubscriptionRef = useRef<Location.LocationSubscription | null>(null);
+
+  // Keep refs in sync with state / props
+  useEffect(() => { riderRef.current = rider; }, [rider]);
+  useEffect(() => { currentLocationRef.current = currentLocation; }, [currentLocation]);
+
+  // Sync isOnline from backend on mount (so UI reflects actual status after app restart)
+  useEffect(() => {
+    if (!isLoggedIn || !rider) return;
+    riderStatusAPI.getStatus(rider.riderId)
+      .then((data) => {
+        if (data.isActive) {
+          setIsOnline(true);
+          // Also resume tracking if rider was left online
+          void startTracking();
+        }
+      })
+      .catch((err) => {
+        console.warn('⚠️ Could not fetch rider status on mount:', err);
+      });
+  }, [isLoggedIn, rider?.riderId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Cleanup when logged out
   useEffect(() => {
     if (!isLoggedIn) {
-      stopTracking();
+      void stopTracking();
+    }
+    return () => { void stopTracking(); };
+  }, [isLoggedIn]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const stopTracking = useCallback(async () => {
+    // 1. Clear heartbeat
+    if (heartbeatRef.current) {
+      clearInterval(heartbeatRef.current);
+      heartbeatRef.current = null;
     }
 
-    return () => {
-      stopTracking();
-    };
-  }, [isLoggedIn]);
+    // 2. Stop foreground subscription
+    if (fgSubscriptionRef.current) {
+      fgSubscriptionRef.current.remove();
+      fgSubscriptionRef.current = null;
+    }
 
-  const startTracking = useCallback(async () => {
-    if (!rider || isTracking) return;
-
+    // 3. Stop OS background task
     try {
-      console.log('📍 Starting location tracking...');
-
-      // Request permissions
-      const { status: foregroundStatus } = await Location.requestForegroundPermissionsAsync();
-      if (foregroundStatus !== 'granted') {
-        console.error('❌ Foreground location permission not granted');
-        return;
+      const registered = await TaskManager.isTaskRegisteredAsync(BACKGROUND_LOCATION_TASK);
+      if (registered) {
+        await Location.stopLocationUpdatesAsync(BACKGROUND_LOCATION_TASK);
+        console.log('✅ Background location task stopped');
       }
-
-      const { status: backgroundStatus } = await Location.requestBackgroundPermissionsAsync();
-      if (backgroundStatus !== 'granted') {
-        console.warn('⚠️ Background location permission not granted');
-      }
-
-      // Start watching location with high accuracy
-      const subscription = await Location.watchPositionAsync(
-        {
-          accuracy: Location.Accuracy.High,
-          timeInterval: 5000, // Check every 5 seconds
-          distanceInterval: 10, // Or when moved 10 meters
-        },
-        (location) => {
-          const { latitude, longitude } = location.coords;
-          setCurrentLocation({ lat: latitude, lng: longitude });
-          console.log(`📍 Location update: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}`);
-        }
-      );
-
-      locationSubscriptionRef.current = subscription;
-      setIsTracking(true);
-
-      // Set up interval to send location updates every 15 seconds (only if changed)
-      const interval = setInterval(async () => {
-        if (!currentLocation) return;
-
-        const { lat, lng } = currentLocation;
-
-        // Check if location changed significantly (more than 5 meters)
-        if (previousLocationRef.current) {
-          const distance = getDistanceInMeters(
-            previousLocationRef.current.lat,
-            previousLocationRef.current.lng,
-            lat,
-            lng
-          );
-
-          if (distance < 5) {
-            console.log(`📍 Location unchanged (${distance.toFixed(1)}m), skipping update`);
-            return;
-          }
-
-          console.log(`📍 Location changed by ${distance.toFixed(1)}m, sending update`);
-        }
-
-        // Send location update to backend
-        try {
-          const location = await Location.getCurrentPositionAsync({
-            accuracy: Location.Accuracy.High,
-          });
-          
-          const { latitude, longitude, speed, heading } = location.coords;
-          
-          await riderStatusAPI.updateLocation(
-            rider.riderId,
-            latitude,
-            longitude,
-            speed ? speed * 3.6 : 0, // Convert m/s to km/h
-            heading || 0
-          );
-
-          // Update previous location
-          previousLocationRef.current = { lat: latitude, lng: longitude };
-          console.log(`✅ Location sent to server: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}`);
-        } catch (error) {
-          console.error('❌ Failed to send location update:', error);
-        }
-      }, 15000); // Every 15 seconds
-
-      locationUpdateIntervalRef.current = interval;
-      console.log('✅ Location tracking started');
-    } catch (error) {
-      console.error('❌ Failed to start location tracking:', error);
-    }
-  }, [rider, isTracking, currentLocation]);
-
-  const stopTracking = useCallback(() => {
-    if (locationSubscriptionRef.current) {
-      locationSubscriptionRef.current.remove();
-      locationSubscriptionRef.current = null;
-    }
-
-    if (locationUpdateIntervalRef.current) {
-      clearInterval(locationUpdateIntervalRef.current);
-      locationUpdateIntervalRef.current = null;
+    } catch (err) {
+      console.warn('⚠️ Failed to stop background location task:', err);
     }
 
     setIsTracking(false);
-    previousLocationRef.current = null;
     console.log('✅ Location tracking stopped');
   }, []);
+
+  const startTracking = useCallback(async () => {
+    if (!rider) return;
+
+    console.log('📍 Starting OS-level location tracking...');
+
+    const { status: fgStatus } = await Location.requestForegroundPermissionsAsync();
+    if (fgStatus !== 'granted') {
+      console.error('❌ Foreground location permission denied');
+      return;
+    }
+
+    const { status: bgStatus } = await Location.requestBackgroundPermissionsAsync();
+    if (bgStatus !== 'granted') {
+      console.warn('⚠️ Background permission denied — tracking limited to foreground');
+    }
+
+    // ------------------------------------------------------------------
+    // 1. OS background task (Android Foreground Service / iOS BG mode)
+    // ------------------------------------------------------------------
+    try {
+      const alreadyRunning = await TaskManager.isTaskRegisteredAsync(BACKGROUND_LOCATION_TASK);
+      if (alreadyRunning) {
+        await Location.stopLocationUpdatesAsync(BACKGROUND_LOCATION_TASK);
+      }
+
+      await Location.startLocationUpdatesAsync(BACKGROUND_LOCATION_TASK, {
+        accuracy: Location.Accuracy.High,
+        timeInterval: 15_000,   // OS fires callback at most every 15 s
+        distanceInterval: 10,   // or whenever rider moves ≥ 10 m
+        foregroundService: {
+          notificationTitle: 'YumDude Rider',
+          notificationBody: 'Tracking location for order assignment...',
+          notificationColor: '#E8352A',
+        },
+        showsBackgroundLocationIndicator: true, // iOS blue bar
+        pausesUpdatesAutomatically: false,
+      });
+
+      console.log('✅ Background location task started');
+    } catch (err) {
+      console.error('❌ Background location task failed (foreground-only fallback):', err);
+    }
+
+    // ------------------------------------------------------------------
+    // 2. Foreground subscription — keeps UI location state updated
+    // ------------------------------------------------------------------
+    try {
+      const sub = await Location.watchPositionAsync(
+        { accuracy: Location.Accuracy.High, timeInterval: 5_000, distanceInterval: 10 },
+        (loc) => {
+          const { latitude, longitude } = loc.coords;
+          setCurrentLocation({ lat: latitude, lng: longitude });
+        }
+      );
+      fgSubscriptionRef.current = sub;
+    } catch (err) {
+      console.error('❌ Foreground subscription failed:', err);
+    }
+
+    // ------------------------------------------------------------------
+    // 3. Heartbeat — runs every 25 s regardless of GPS state.
+    //    • If location is available → send full location update (updates lastSeen + lat/lng)
+    //    • If location is null      → send keepalive ping (updates lastSeen only)
+    //    This prevents the rider being marked stale by the assignment Lambda
+    //    when GPS fix has not arrived yet.
+    //    Reads from refs (not state) — no stale closure possible.
+    // ------------------------------------------------------------------
+    heartbeatRef.current = setInterval(async () => {
+      const loc = currentLocationRef.current;
+      const r = riderRef.current;
+      if (!r) return;
+
+      try {
+        if (loc) {
+          await riderStatusAPI.updateLocation(r.riderId, loc.lat, loc.lng, 0, 0);
+          console.log(`💓 Heartbeat: ${loc.lat.toFixed(5)}, ${loc.lng.toFixed(5)}`);
+        } else {
+          // No GPS fix yet — keepalive: just touch lastSeen so we stay assignable
+          await riderStatusAPI.toggleStatus(r.riderId, true);
+          console.log('💓 Heartbeat: keepalive (no GPS fix yet)');
+        }
+      } catch (err) {
+        console.error('❌ Heartbeat failed:', err);
+      }
+    }, HEARTBEAT_INTERVAL_MS);
+
+    setIsTracking(true);
+    console.log('✅ Location tracking active (OS task + foreground + heartbeat)');
+  }, [rider]);
 
   const toggleOnline = useCallback(async () => {
     if (!rider) return;
 
     try {
-      const newStatus = !isOnline;
-
-      if (newStatus) {
-        // GOING ONLINE: Get current location and send with status
+      if (!isOnline) {
         console.log('🟢 Going online...');
-        
+
         const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status !== 'granted') {
-          throw new Error('Location permission not granted');
-        }
+        if (status !== 'granted') throw new Error('Location permission not granted');
 
-        const location = await Location.getCurrentPositionAsync({
-          accuracy: Location.Accuracy.High,
-        });
-
-        const { latitude, longitude } = location.coords;
+        const snapshot = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
+        const { latitude, longitude } = snapshot.coords;
         console.log(`📍 Current location: ${latitude}, ${longitude}`);
 
-        // Single API call with isActive=true, lat, lng
         await riderStatusAPI.toggleStatus(rider.riderId, true, latitude, longitude);
-        
         setCurrentLocation({ lat: latitude, lng: longitude });
-        previousLocationRef.current = { lat: latitude, lng: longitude };
         setIsOnline(true);
-
-        // Start tracking
         await startTracking();
-        
         console.log('✅ Rider is now ONLINE');
       } else {
-        // GOING OFFLINE: Send final location with status
         console.log('🔴 Going offline...');
-        
+
         let finalLat: number | undefined;
         let finalLng: number | undefined;
 
-        // Try to get current location for final update
         try {
-          const location = await Location.getCurrentPositionAsync({
+          const snapshot = await Location.getCurrentPositionAsync({
             accuracy: Location.Accuracy.Balanced,
-            maximumAge: 30000, // Accept cached location up to 30 seconds old
           });
-          finalLat = location.coords.latitude;
-          finalLng = location.coords.longitude;
+          finalLat = snapshot.coords.latitude;
+          finalLng = snapshot.coords.longitude;
           console.log(`📍 Final location: ${finalLat}, ${finalLng}`);
-        } catch (error) {
-          console.warn('⚠️ Could not get final location, using last known');
+        } catch {
           if (currentLocation) {
             finalLat = currentLocation.lat;
             finalLng = currentLocation.lng;
           }
         }
 
-        // Stop tracking first
-        stopTracking();
-
-        // Single API call with isActive=false and final location
+        await stopTracking();
         await riderStatusAPI.toggleStatus(rider.riderId, false, finalLat, finalLng);
-        
         setIsOnline(false);
         console.log('✅ Rider is now OFFLINE');
       }
@@ -235,33 +240,20 @@ export function LocationProvider({ children }: { children: ReactNode }) {
     }
   }, [rider, isOnline, currentLocation, startTracking, stopTracking]);
 
-  // Public method for logout/app close (goes offline without throwing errors)
   const goOffline = useCallback(async () => {
     if (!rider || !isOnline) return;
 
     try {
       console.log('🔴 Setting rider offline (logout/app close)...');
-      
-      let finalLat: number | undefined;
-      let finalLng: number | undefined;
-
-      // Use last known location
-      if (currentLocation) {
-        finalLat = currentLocation.lat;
-        finalLng = currentLocation.lng;
-      }
-
-      // Stop tracking
-      stopTracking();
-
-      // Send offline status with final location
+      const finalLat = currentLocation?.lat;
+      const finalLng = currentLocation?.lng;
+      await stopTracking();
       await riderStatusAPI.toggleStatus(rider.riderId, false, finalLat, finalLng);
-      
       setIsOnline(false);
       console.log('✅ Rider offline (logout/app close)');
     } catch (error) {
       console.error('❌ Failed to set rider offline:', error);
-      // Don't throw - this is called during cleanup
+      // Don't throw — called during cleanup
     }
   }, [rider, isOnline, currentLocation, stopTracking]);
 

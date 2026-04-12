@@ -3,7 +3,7 @@
  * Main screen showing assigned orders
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   StyleSheet,
   Text,
@@ -15,6 +15,7 @@ import {
   ActivityIndicator,
   Linking,
 } from 'react-native';
+import * as Location from 'expo-location';
 import { useRouter, Stack } from 'expo-router';
 import { Package, Bike, Star } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -40,6 +41,16 @@ export default function OrdersScreen() {
   const [selectedTab, setSelectedTab] = useState<TabFilter>('active');
   const [isTogglingOnline, setIsTogglingOnline] = useState(false);
   const [hasLoadedCompleted, setHasLoadedCompleted] = useState(false);
+  // Tracks which orderIds currently have an in-flight action (prevents double-tap)
+  const [loadingOrderIds, setLoadingOrderIds] = useState<Set<string>>(new Set());
+
+  const addLoadingOrder = (id: string) => setLoadingOrderIds((prev) => new Set(prev).add(id));
+  const removeLoadingOrder = (id: string) => setLoadingOrderIds((prev) => { const n = new Set(prev); n.delete(id); return n; });
+
+  // Request location permission on mount — covers riders already logged in who skip the login screen
+  useEffect(() => {
+    Location.requestForegroundPermissionsAsync();
+  }, []);
 
   React.useEffect(() => {
     if (selectedTab === 'completed' && !hasLoadedCompleted) {
@@ -83,6 +94,8 @@ export default function OrdersScreen() {
   };
 
   const handleAcceptOrder = async (orderId: string, status: 'RIDER_ASSIGNED' | 'PICKED_UP') => {
+    if (loadingOrderIds.has(orderId)) return;
+    addLoadingOrder(orderId);
     try {
       await acceptOrder(orderId, status);
       if (status === 'PICKED_UP') {
@@ -92,15 +105,21 @@ export default function OrdersScreen() {
       }
     } catch (error: any) {
       showAlert('Error', error.message || 'Failed to mark as picked up', undefined, 'error');
+    } finally {
+      removeLoadingOrder(orderId);
     }
   };
 
   const handleRejectOrder = async (orderId: string, reason: string = 'Dude rejected') => {
+    if (loadingOrderIds.has(orderId)) return;
+    addLoadingOrder(orderId);
     try {
       await rejectOrder(orderId, reason);
       showAlert('Order Rejected', 'You have rejected the order.', undefined, 'info');
     } catch (error: any) {
       showAlert('Error', error.message || 'Failed to reject order', undefined, 'error');
+    } finally {
+      removeLoadingOrder(orderId);
     }
   };
 
@@ -113,33 +132,35 @@ export default function OrdersScreen() {
   };
 
   const handleStartDelivery = async (orderId: string) => {
+    if (loadingOrderIds.has(orderId)) return;
+    addLoadingOrder(orderId);
     try {
       const order = orders.find(o => o.orderId === orderId);
-
       await updateOrderStatus(orderId, 'OUT_FOR_DELIVERY');
-
       if (order?.deliveryLat && order?.deliveryLng) {
         const mapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${order.deliveryLat},${order.deliveryLng}&travelmode=driving`;
-
         setTimeout(() => {
-          Linking.openURL(mapsUrl).catch(err => {
-            console.error('Failed to open Google Maps:', err);
-          });
+          Linking.openURL(mapsUrl).catch(err => { console.error('Failed to open Google Maps:', err); });
         }, 500);
       }
-
       showAlert('Out for Delivery', 'Opening navigation to customer location...', undefined, 'success');
     } catch (error: any) {
       showAlert('Error', error.message || 'Failed to start delivery', undefined, 'error');
+    } finally {
+      removeLoadingOrder(orderId);
     }
   };
 
   const handleMarkDelivered = async (orderId: string) => {
+    if (loadingOrderIds.has(orderId)) return;
+    addLoadingOrder(orderId);
     try {
       await updateOrderStatus(orderId, 'DELIVERED');
       showAlert('Delivered!', 'Order completed successfully. Great job!', undefined, 'success');
     } catch (error: any) {
       showAlert('Error', error.message || 'Failed to mark as delivered', undefined, 'error');
+    } finally {
+      removeLoadingOrder(orderId);
     }
   };
 

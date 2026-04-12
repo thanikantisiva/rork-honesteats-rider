@@ -47,15 +47,47 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const name = await AsyncStorage.getItem('@rider_name');
       const jwtToken = await AsyncStorage.getItem('@jwt_token');
 
+      const clearSession = async (reason: string) => {
+        console.warn(`⚠️ Clearing stale session: ${reason}`);
+        api.setJWTToken(null);
+        await AsyncStorage.multiRemove([
+          '@rider_logged_in',
+          '@rider_id',
+          '@rider_phone',
+          '@rider_name',
+          '@jwt_token',
+        ]);
+      };
+
       if (loggedIn === 'true' && riderId && phone && name) {
+        if (!jwtToken) {
+          await clearSession('logged-in flag set but no JWT token');
+          return;
+        }
+
+        // Validate the JWT against the backend before trusting it.
+        // This catches tokens that survived a reinstall via Android Auto Backup
+        // or that have since expired / been revoked.
         setApiBaseUrlForPhone(phone);
-        setRider({ riderId, phone, name });
-        setIsLoggedIn(true);
-      }
-      
-      if (jwtToken) {
         api.setJWTToken(jwtToken);
-        console.log('✅ JWT token loaded and set in API client');
+        try {
+          await riderStatusAPI.getStatus(riderId);
+          // Token is valid — restore session
+          setRider({ riderId, phone, name });
+          setIsLoggedIn(true);
+          console.log('✅ Session restored and JWT validated');
+        } catch (err: any) {
+          const status = err?.status ?? err?.statusCode;
+          if (status === 401 || status === 403) {
+            await clearSession('JWT rejected by backend (401/403) — forcing re-login');
+          } else {
+            // Network error or server down — restore session optimistically
+            // so the rider isn't logged out due to connectivity issues.
+            setRider({ riderId, phone, name });
+            setIsLoggedIn(true);
+            console.warn('⚠️ Could not validate JWT (network error) — restoring session optimistically');
+          }
+        }
       }
     } catch (error) {
       console.error('Failed to load rider session:', error);
@@ -100,6 +132,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       '@rider_phone',
       '@rider_name',
       '@jwt_token',
+      '@bg_last_location',
     ]);
     
     // Clear JWT token from API client

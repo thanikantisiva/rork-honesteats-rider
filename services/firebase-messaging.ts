@@ -9,14 +9,24 @@ import { PermissionsAndroid, Platform } from 'react-native';
 import notifee, { AndroidImportance, EventType } from '@notifee/react-native';
 import { userAPI } from '@/lib/api';
 
-export const RIDER_NOTIFICATION_CHANNEL_ID = 'rider_orders_ring';
+export const RIDER_NOTIFICATION_CHANNEL_ID = 'rider_orders_ring_v2';
 export const RIDER_NOTIFICATION_SOUND = 'new_order_ring';
 
 const DEFAULT_NOTIFICATION_TITLE = 'YumDude Rider';
 const DEFAULT_NOTIFICATION_BODY = 'You have a new update';
 
 export async function ensureNotificationChannel(): Promise<string> {
-  if (Platform.OS !== 'android') {
+  if (Platform.OS === 'ios') {
+    // Register notification categories so iOS shows Accept / Reject action buttons
+    await notifee.setNotificationCategories([
+      {
+        id: 'ORDER_ASSIGNED',
+        actions: [
+          { id: 'ACCEPT_ORDER', title: '\u2705 Accept', foreground: true },
+          { id: 'REJECT_ORDER', title: '\u274C Reject', foreground: true, destructive: true },
+        ],
+      },
+    ]);
     return RIDER_NOTIFICATION_CHANNEL_ID;
   }
 
@@ -84,6 +94,7 @@ export async function displayNotificationFromRemoteMessage(remoteMessage: any): 
   }
 
   const channelId = await ensureNotificationChannel();
+  const isOrderAssigned = data.type === 'order_assigned';
 
   await notifee.displayNotification({
     title,
@@ -93,13 +104,28 @@ export async function displayNotificationFromRemoteMessage(remoteMessage: any): 
       channelId,
       pressAction: {
         id: 'default',
+        launchActivity: 'default',
       },
+      // Accept / Reject buttons inline in the notification shade
+      actions: isOrderAssigned
+        ? [
+            {
+              title: '\u2705 Accept',
+              pressAction: { id: 'ACCEPT_ORDER', launchActivity: 'default' },
+            },
+            {
+              title: '\u274C Reject',
+              pressAction: { id: 'REJECT_ORDER', launchActivity: 'default' },
+            },
+          ]
+        : undefined,
       smallIcon: 'ic_launcher',
       sound: RIDER_NOTIFICATION_SOUND,
       importance: AndroidImportance.HIGH,
     },
     ios: {
-      sound: 'default',
+      sound: isOrderAssigned ? RIDER_NOTIFICATION_SOUND : 'default',
+      categoryId: isOrderAssigned ? 'ORDER_ASSIGNED' : undefined,
     },
   });
 }
@@ -225,7 +251,8 @@ export function setupFCMTokenRefreshListener(): () => void {
 
 export function setupNotificationListeners(
   onNotificationReceived: (message: any) => void,
-  onNotificationOpened: (message: any) => void
+  onNotificationOpened: (message: any) => void,
+  onActionPress?: (actionId: string, data: Record<string, string>) => void
 ): () => void {
   console.log('🔔 Setting up notification listeners for rider app...');
   void ensureNotificationChannel();
@@ -254,6 +281,17 @@ export function setupNotificationListeners(
     });
 
   const unsubscribeNotifeeForeground = notifee.onForegroundEvent(({ type, detail }) => {
+    // ACTION_PRESS — Accept / Reject button tapped while app is in foreground
+    if (type === EventType.ACTION_PRESS && detail.pressAction?.id !== 'default') {
+      const actionId = detail.pressAction!.id;
+      const data = (detail.notification?.data ?? {}) as Record<string, string>;
+      console.log(`👆 Notification action pressed (foreground): ${actionId}`, data);
+      if (onActionPress) {
+        onActionPress(actionId, data);
+      }
+      return;
+    }
+
     if (type !== EventType.PRESS && type !== EventType.ACTION_PRESS) {
       return;
     }

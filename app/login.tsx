@@ -21,6 +21,7 @@ import { useThemedAlert } from '@/components/ThemedAlert';
 import { useAuth } from '@/contexts/AuthContext';
 import { riderAuthAPI, userAPI, authOTPAPI, setApiBaseUrlForPhone,api } from '@/lib/api';
 import { requestNotificationPermission, getFCMToken } from '@/services/firebase-messaging';
+import * as Location from 'expo-location';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { YumDudeLogo } from '@/components/YumDudeLogo';
 import { riderTheme } from '@/theme/riderTheme';
@@ -165,9 +166,12 @@ export default function LoginScreen() {
       
       console.log('✅ OTP verified successfully');
 
-      await login(riderData);
+      // Request both permissions NOW while the login screen is still fully in
+      // the foreground. Calling these after login() triggers navigation to /(tabs)
+      // and Android silently drops permission dialogs during activity transitions.
       await registerFCMToken(riderData.phone);
-      
+
+      await login(riderData);
       console.log('✅ Logged in successfully, redirecting to home...');
     } catch (error: any) {
       showAlert('Invalid OTP', 'The OTP you entered is incorrect. Please try again.', undefined, 'error');
@@ -178,6 +182,9 @@ export default function LoginScreen() {
 
   const registerFCMToken = async (phone: string) => {
     try {
+      // Request location permission upfront — independent of notification permission
+      await Location.requestForegroundPermissionsAsync();
+
       const hasPermission = await requestNotificationPermission();
       if (!hasPermission) {
         return;

@@ -62,6 +62,21 @@ export function OrderCard({ order, onPress, onAccept, onReject, onStartPickupPro
   const [packagePhotoUri, setPackagePhotoUri] = useState<string | null>(null);
   const [isUploadingEvidence, setIsUploadingEvidence] = useState(false);
   const [hasStartedPickupProcess, setHasStartedPickupProcess] = useState(false);
+  // Prevents double-tap on any async action button
+  const [isActionLoading, setIsActionLoading] = useState(false);
+  const [isConfirmingOtp, setIsConfirmingOtp] = useState(false);
+
+  /** Wraps any async button callback with loading-gate: sets isActionLoading true,
+   *  awaits the callback, then sets it false — no matter what. */
+  const withActionLock = async (fn: () => Promise<void> | void) => {
+    if (isActionLoading) return;
+    setIsActionLoading(true);
+    try {
+      await fn();
+    } finally {
+      setIsActionLoading(false);
+    }
+  };
 
   /** Pickup distance: backend road distance (POST /api/v1/location/distance), Haversine fallback on error */
   const [distanceToPickupKm, setDistanceToPickupKm] = useState<number | undefined>(undefined);
@@ -115,7 +130,8 @@ export function OrderCard({ order, onPress, onAccept, onReject, onStartPickupPro
     };
   }, [riderLocation?.lat, riderLocation?.lng, order.pickupLat, order.pickupLng]);
 
-  const handleConfirmOtp = () => {
+  const handleConfirmOtp = async () => {
+    if (isConfirmingOtp) return;
     if (!order.deliveryOtp) {
       Alert.alert('OTP Required', 'Delivery OTP is missing for this order.');
       return;
@@ -131,7 +147,12 @@ export function OrderCard({ order, onPress, onAccept, onReject, onStartPickupPro
     setOtpModalVisible(false);
     setOtpEntry('');
     if (onMarkDelivered) {
-      onMarkDelivered();
+      setIsConfirmingOtp(true);
+      try {
+        await onMarkDelivered();
+      } finally {
+        setIsConfirmingOtp(false);
+      }
     }
   };
 
@@ -265,25 +286,29 @@ export function OrderCard({ order, onPress, onAccept, onReject, onStartPickupPro
       {isOffer && onAccept && onReject && (
         <View style={styles.actionsRow}>
           <TouchableOpacity
-            style={styles.rejectButton}
-            onPress={(e) => {
-              e.stopPropagation();
-              onReject('Dude rejected');
-            }}
+            style={[styles.rejectButton, isActionLoading && { opacity: 0.5 }]}
+            onPress={(e) => { e.stopPropagation(); void withActionLock(() => onReject!('Dude rejected')); }}
+            disabled={isActionLoading}
             activeOpacity={0.85}
           >
-            <Text style={styles.rejectText}>Reject</Text>
+            {isActionLoading ? (
+              <ActivityIndicator size="small" color={riderTheme.colors.danger} />
+            ) : (
+              <Text style={styles.rejectText}>Reject</Text>
+            )}
           </TouchableOpacity>
           <TouchableOpacity
-            style={styles.acceptButton}
-            onPress={(e) => {
-              e.stopPropagation();
-              onAccept();
-            }}
+            style={[styles.acceptButton, isActionLoading && { opacity: 0.5 }]}
+            onPress={(e) => { e.stopPropagation(); void withActionLock(() => onAccept!()); }}
+            disabled={isActionLoading}
             activeOpacity={0.85}
           >
-            <CheckCircle size={18} color={riderTheme.colors.textInverse} strokeWidth={2.5} />
-            <Text style={styles.acceptText}>Accept Order</Text>
+            {isActionLoading ? (
+              <ActivityIndicator size="small" color={riderTheme.colors.textInverse} />
+            ) : (
+              <CheckCircle size={18} color={riderTheme.colors.textInverse} strokeWidth={2.5} />
+            )}
+            <Text style={styles.acceptText}>{isActionLoading ? 'Processing...' : 'Accept Order'}</Text>
           </TouchableOpacity>
         </View>
       )}
@@ -349,30 +374,34 @@ export function OrderCard({ order, onPress, onAccept, onReject, onStartPickupPro
 
       {isPickedUp && onStartDelivery && (
         <TouchableOpacity
-          style={styles.primaryAction}
-          onPress={(e) => {
-            e.stopPropagation();
-            onStartDelivery();
-          }}
+          style={[styles.primaryAction, isActionLoading && { opacity: 0.6 }]}
+          onPress={(e) => { e.stopPropagation(); void withActionLock(() => onStartDelivery!()); }}
+          disabled={isActionLoading}
           activeOpacity={0.85}
         >
-          <Truck size={20} color={riderTheme.colors.textInverse} strokeWidth={2.5} />
-          <Text style={styles.primaryActionText}>Start Delivery</Text>
-          <ArrowRight size={18} color={riderTheme.colors.textInverse} strokeWidth={2.5} />
+          {isActionLoading ? (
+            <ActivityIndicator size="small" color={riderTheme.colors.textInverse} />
+          ) : (
+            <Truck size={20} color={riderTheme.colors.textInverse} strokeWidth={2.5} />
+          )}
+          <Text style={styles.primaryActionText}>{isActionLoading ? 'Starting...' : 'Start Delivery'}</Text>
+          {!isActionLoading && <ArrowRight size={18} color={riderTheme.colors.textInverse} strokeWidth={2.5} />}
         </TouchableOpacity>
       )}
 
       {isOutForDelivery && onMarkDelivered && (
         <TouchableOpacity
-          onPress={(e) => {
-            e.stopPropagation();
-            setOtpModalVisible(true);
-          }}
-          style={styles.markDeliveredButton}
+          onPress={(e) => { e.stopPropagation(); if (!isConfirmingOtp) setOtpModalVisible(true); }}
+          style={[styles.markDeliveredButton, isConfirmingOtp && { opacity: 0.6 }]}
+          disabled={isConfirmingOtp}
           activeOpacity={0.8}
         >
-          <CheckCircle size={18} color={riderTheme.colors.textInverse} />
-          <Text style={styles.markDeliveredButtonText}>MARK AS DELIVERED</Text>
+          {isConfirmingOtp ? (
+            <ActivityIndicator size="small" color={riderTheme.colors.textInverse} />
+          ) : (
+            <CheckCircle size={18} color={riderTheme.colors.textInverse} />
+          )}
+          <Text style={styles.markDeliveredButtonText}>{isConfirmingOtp ? 'DELIVERING...' : 'MARK AS DELIVERED'}</Text>
         </TouchableOpacity>
       )}
 
@@ -407,11 +436,15 @@ export function OrderCard({ order, onPress, onAccept, onReject, onStartPickupPro
                 <Text style={styles.modalCancelText}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={styles.modalConfirmButton}
+                style={[styles.modalConfirmButton, isConfirmingOtp && { opacity: 0.6 }]}
                 onPress={handleConfirmOtp}
+                disabled={isConfirmingOtp}
                 activeOpacity={0.8}
               >
-                <Text style={styles.modalConfirmText}>Verify & Deliver</Text>
+                {isConfirmingOtp ? (
+                  <ActivityIndicator size="small" color={riderTheme.colors.textInverse} style={{ marginRight: 6 }} />
+                ) : null}
+                <Text style={styles.modalConfirmText}>{isConfirmingOtp ? 'Delivering...' : 'Verify & Deliver'}</Text>
               </TouchableOpacity>
             </View>
           </View>
