@@ -3,15 +3,28 @@
  * Modern premium order card with gradient accents
  */
 
-import React, { useState, useEffect } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, TextInput, Alert, Modal, Image, ActivityIndicator } from 'react-native';
-import { MapPin, Home, Package, IndianRupee, Navigation, CheckCircle, Truck, Lock, ArrowRight, Camera, RotateCcw } from 'lucide-react-native';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import {
+  StyleSheet,
+  Text,
+  View,
+  TouchableOpacity,
+  TextInput,
+  Alert,
+  Modal,
+  Image,
+  ActivityIndicator,
+  Pressable,
+  Dimensions,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { MapPin, Home, Package, IndianRupee, Navigation, CheckCircle, Truck, Lock, ArrowRight, Camera, RotateCcw, QrCode, Banknote, X } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system';
 import { RiderOrder } from '@/types';
 import { StatusBadge } from './StatusBadge';
 import { formatDistance, calculateDistance } from '@/utils/distance';
-import { imageAPI, locationAPI } from '@/lib/api';
+import { imageAPI, locationAPI, riderOrderAPI, riderPaymentAPI } from '@/lib/api';
 import { riderTheme } from '@/theme/riderTheme';
 
 function asFiniteNumber(v: unknown): number | undefined {
@@ -40,6 +53,15 @@ function formatJobEarningsRupees(amount: number): string {
   return rounded % 1 === 0 ? String(rounded) : rounded.toFixed(2);
 }
 
+type UpiQrPayload = {
+  paymentId: string;
+  qrCodeId: string;
+  imageUrl: string;
+  closeBy: number;
+  amount: number;
+  amountRupees: number;
+};
+
 interface OrderCardProps {
   order: RiderOrder;
   onPress: () => void;
@@ -48,10 +70,12 @@ interface OrderCardProps {
   onStartPickupProcess?: () => void;
   onStartDelivery?: () => void;
   onMarkDelivered?: () => void;
+  /** Required to record COD (UPI QR / cash) before delivery */
+  riderId?: string;
   riderLocation?: { lat: number; lng: number };
 }
 
-export function OrderCard({ order, onPress, onAccept, onReject, onStartPickupProcess, onStartDelivery, onMarkDelivered, riderLocation }: OrderCardProps) {
+export function OrderCard({ order, onPress, onAccept, onReject, onStartPickupProcess, onStartDelivery, onMarkDelivered, riderId, riderLocation }: OrderCardProps) {
   const isOffer = order.status === 'OFFERED_TO_RIDER';
   const isNewOrder = order.status === 'RIDER_ASSIGNED';
   const isPickedUp = order.status === 'PICKED_UP';
@@ -65,6 +89,29 @@ export function OrderCard({ order, onPress, onAccept, onReject, onStartPickupPro
   // Prevents double-tap on any async action button
   const [isActionLoading, setIsActionLoading] = useState(false);
   const [isConfirmingOtp, setIsConfirmingOtp] = useState(false);
+  const [codCollectionModalVisible, setCodCollectionModalVisible] = useState(false);
+  const [qrOpen, setQrOpen] = useState(false);
+  const [qrPayload, setQrPayload] = useState<UpiQrPayload | null>(null);
+  const [qrRemainingSec, setQrRemainingSec] = useState(0);
+  const [codCashBusy, setCodCashBusy] = useState(false);
+  const [deliverStepBusy, setDeliverStepBusy] = useState(false);
+  /** Shown under OTP title so riders know why UPI/cash was skipped (if applicable). */
+  const [otpHelpText, setOtpHelpText] = useState<string | null>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const clearQrTimers = useCallback(() => {
+    if (pollRef.current) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+    if (tickRef.current) {
+      clearInterval(tickRef.current);
+      tickRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => () => clearQrTimers(), [clearQrTimers]);
 
   /** Wraps any async button callback with loading-gate: sets isActionLoading true,
    *  awaits the callback, then sets it false — no matter what. */
@@ -130,6 +177,120 @@ export function OrderCard({ order, onPress, onAccept, onReject, onStartPickupPro
     };
   }, [riderLocation?.lat, riderLocation?.lng, order.pickupLat, order.pickupLng]);
 
+  const completeDelivery = async () => {
+    if (!onMarkDelivered) return;
+    setIsConfirmingOtp(true);
+    try {
+      await onMarkDelivered();
+    } finally {
+      setIsConfirmingOtp(false);
+    }
+  };
+
+  /** Payment first (if COD pending), then delivery OTP, then mark delivered. */
+  const beginMarkDeliveredFlow = async () => {
+    if (deliverStepBusy || isConfirmingOtp || codCashBusy) return;
+    const isCod = (order.paymentMethod || '').toUpperCase() === 'COD';
+    if (!isCod) {
+      setOtpHelpText(null);
+      setOtpModalVisible(true);
+      return;
+    }
+    if (!riderId) {
+      Alert.alert('Error', 'Cannot complete delivery: rider session missing.');
+      return;
+    }
+    setDeliverStepBusy(true);
+    try {
+      if (order.paymentId) {
+        try {
+          const p = await riderPaymentAPI.getPayment(order.paymentId);
+          if (String(p.paymentStatus).toUpperCase() === 'SUCCESS') {
+            setOtpHelpText(
+              'COD is already marked paid in the system (customer confirmed in the app). No need to collect again — ask for the delivery OTP to complete handoff.'
+            );
+            setOtpModalVisible(true);
+            return;
+          }
+        } catch {
+          /* fall through to collect payment */
+        }
+      }
+      setCodCollectionModalVisible(true);
+    } finally {
+      setDeliverStepBusy(false);
+    }
+  };
+
+  const closeQrModal = () => {
+    clearQrTimers();
+    setQrOpen(false);
+    setQrPayload(null);
+  };
+
+  const openUpiQr = async () => {
+    if (!riderId) {
+      Alert.alert('Error', 'Cannot load UPI QR: rider session missing.');
+      return;
+    }
+    try {
+      const data = await riderOrderAPI.createUpiQr(riderId, order.orderId);
+      setQrPayload(data);
+      setQrOpen(true);
+      clearQrTimers();
+
+      const tick = () => {
+        const left = Math.max(0, data.closeBy - Math.floor(Date.now() / 1000));
+        setQrRemainingSec(left);
+        if (left <= 0) {
+          clearQrTimers();
+        }
+      };
+      tick();
+      tickRef.current = setInterval(tick, 1000);
+
+      pollRef.current = setInterval(() => {
+        void (async () => {
+          try {
+            const p = await riderPaymentAPI.getPayment(data.paymentId);
+            if (String(p.paymentStatus).toUpperCase() === 'SUCCESS') {
+              clearQrTimers();
+              setQrOpen(false);
+              setQrPayload(null);
+              setCodCollectionModalVisible(false);
+              setOtpHelpText('UPI payment recorded. Enter the delivery OTP from the customer.');
+              setOtpModalVisible(true);
+            }
+          } catch {
+            /* ignore transient poll errors */
+          }
+        })();
+      }, 2500);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Could not load QR';
+      Alert.alert('UPI QR', msg);
+    }
+  };
+
+  const handleCodPaidCash = async () => {
+    if (!riderId) {
+      Alert.alert('Error', 'Cannot record cash: rider session missing.');
+      return;
+    }
+    setCodCashBusy(true);
+    try {
+      await riderOrderAPI.markCashCollected(riderId, order.orderId);
+      setCodCollectionModalVisible(false);
+      setOtpHelpText('Cash payment recorded. Enter the delivery OTP from the customer.');
+      setOtpModalVisible(true);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Could not record cash';
+      Alert.alert('Cash payment', msg);
+    } finally {
+      setCodCashBusy(false);
+    }
+  };
+
   const handleConfirmOtp = async () => {
     if (isConfirmingOtp) return;
     if (!order.deliveryOtp) {
@@ -146,14 +307,10 @@ export function OrderCard({ order, onPress, onAccept, onReject, onStartPickupPro
     }
     setOtpModalVisible(false);
     setOtpEntry('');
-    if (onMarkDelivered) {
-      setIsConfirmingOtp(true);
-      try {
-        await onMarkDelivered();
-      } finally {
-        setIsConfirmingOtp(false);
-      }
-    }
+    setOtpHelpText(null);
+
+    if (!onMarkDelivered) return;
+    await completeDelivery();
   };
 
   const takePackagePhoto = async () => {
@@ -198,6 +355,7 @@ export function OrderCard({ order, onPress, onAccept, onReject, onStartPickupPro
   };
 
   return (
+    <>
     <TouchableOpacity
       style={[styles.card, getCardStyle()]}
       onPress={isCompleted ? undefined : onPress}
@@ -214,6 +372,13 @@ export function OrderCard({ order, onPress, onAccept, onReject, onStartPickupPro
         </View>
         <StatusBadge status={order.status} />
       </View>
+
+      {(order.paymentMethod || '').toUpperCase() === 'COD' && (
+        <View style={styles.codBanner}>
+          <Text style={styles.codBannerTitle}>Cash on delivery</Text>
+          <Text style={styles.codBannerAmount}>Collect ₹{Number(order.grandTotal).toFixed(0)} from customer</Text>
+        </View>
+      )}
 
       {/* Locations Section */}
       <View style={styles.locationsContainer}>
@@ -391,29 +556,47 @@ export function OrderCard({ order, onPress, onAccept, onReject, onStartPickupPro
 
       {isOutForDelivery && onMarkDelivered && (
         <TouchableOpacity
-          onPress={(e) => { e.stopPropagation(); if (!isConfirmingOtp) setOtpModalVisible(true); }}
-          style={[styles.markDeliveredButton, isConfirmingOtp && { opacity: 0.6 }]}
-          disabled={isConfirmingOtp}
+          onPress={(e) => {
+            e.stopPropagation();
+            void beginMarkDeliveredFlow();
+          }}
+          style={[
+            styles.markDeliveredButton,
+            (isConfirmingOtp || codCashBusy || deliverStepBusy) && { opacity: 0.6 },
+          ]}
+          disabled={isConfirmingOtp || codCashBusy || deliverStepBusy}
           activeOpacity={0.8}
         >
-          {isConfirmingOtp ? (
+          {isConfirmingOtp || codCashBusy || deliverStepBusy ? (
             <ActivityIndicator size="small" color={riderTheme.colors.textInverse} />
           ) : (
             <CheckCircle size={18} color={riderTheme.colors.textInverse} />
           )}
-          <Text style={styles.markDeliveredButtonText}>{isConfirmingOtp ? 'DELIVERING...' : 'MARK AS DELIVERED'}</Text>
+          <Text style={styles.markDeliveredButtonText}>
+            {isConfirmingOtp || codCashBusy
+              ? 'DELIVERING...'
+              : deliverStepBusy
+                ? 'PLEASE WAIT...'
+                : 'MARK AS DELIVERED'}
+          </Text>
         </TouchableOpacity>
       )}
+
+    </TouchableOpacity>
 
       <Modal
         visible={otpModalVisible}
         transparent
         animationType="fade"
-        onRequestClose={() => setOtpModalVisible(false)}
+        onRequestClose={() => {
+          setOtpModalVisible(false);
+          setOtpHelpText(null);
+        }}
       >
         <View style={styles.modalBackdrop}>
           <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Enter Delivery OTP</Text>
+            <Text style={styles.modalTitle}>Delivery OTP (final step)</Text>
+            {otpHelpText ? <Text style={styles.modalHelpText}>{otpHelpText}</Text> : null}
             <TextInput
               style={styles.modalInput}
               value={otpEntry}
@@ -430,6 +613,7 @@ export function OrderCard({ order, onPress, onAccept, onReject, onStartPickupPro
                 onPress={() => {
                   setOtpModalVisible(false);
                   setOtpEntry('');
+                  setOtpHelpText(null);
                 }}
                 activeOpacity={0.8}
               >
@@ -437,7 +621,7 @@ export function OrderCard({ order, onPress, onAccept, onReject, onStartPickupPro
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.modalConfirmButton, isConfirmingOtp && { opacity: 0.6 }]}
-                onPress={handleConfirmOtp}
+                onPress={() => void handleConfirmOtp()}
                 disabled={isConfirmingOtp}
                 activeOpacity={0.8}
               >
@@ -451,9 +635,78 @@ export function OrderCard({ order, onPress, onAccept, onReject, onStartPickupPro
         </View>
       </Modal>
 
-    </TouchableOpacity>
+      <Modal
+        visible={codCollectionModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setCodCollectionModalVisible(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Collect payment</Text>
+            <Text style={styles.codModalSubtitle}>
+              Customer chose COD. Collect ₹{Number(order.grandTotal).toFixed(0)} via UPI QR or cash. You will enter the delivery OTP after payment is recorded.
+            </Text>
+            <View style={styles.codPayRow}>
+              <TouchableOpacity style={styles.codQrButton} onPress={() => void openUpiQr()} activeOpacity={0.88}>
+                <QrCode size={20} color={riderTheme.colors.primary} />
+                <Text style={styles.codQrButtonText}>UPI QR</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.codCashButton}
+                onPress={() => void handleCodPaidCash()}
+                disabled={codCashBusy}
+                activeOpacity={0.88}
+              >
+                <Banknote size={20} color={riderTheme.colors.success} />
+                <Text style={styles.codCashButtonText}>{codCashBusy ? 'Saving…' : 'Paid in cash'}</Text>
+              </TouchableOpacity>
+            </View>
+            <TouchableOpacity
+              style={styles.modalCancelButtonWide}
+              onPress={() => setCodCollectionModalVisible(false)}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.modalCancelText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={qrOpen} animationType="slide" onRequestClose={closeQrModal}>
+        <SafeAreaView style={styles.qrModalRoot}>
+          <View style={styles.qrModalHeader}>
+            <Text style={styles.qrModalTitle}>Scan to pay (UPI)</Text>
+            <Pressable onPress={closeQrModal} hitSlop={12} accessibilityRole="button">
+              <X size={26} color={riderTheme.colors.textPrimary} />
+            </Pressable>
+          </View>
+          {qrPayload ? (
+            <>
+              <Text style={styles.qrAmount}>₹{Number(qrPayload.amountRupees).toFixed(0)}</Text>
+              <Text style={styles.qrExpiry}>
+                {qrRemainingSec > 0
+                  ? `Expires in ${Math.floor(qrRemainingSec / 60)}m ${qrRemainingSec % 60}s`
+                  : 'QR expired — close and open again'}
+              </Text>
+              <View style={styles.qrImageWrap}>
+                <Image source={{ uri: qrPayload.imageUrl }} style={styles.qrImage} resizeMode="contain" />
+              </View>
+              <Text style={styles.qrHint}>Wait here until payment confirms automatically.</Text>
+            </>
+          ) : (
+            <ActivityIndicator size="large" color={riderTheme.colors.primary} style={{ marginTop: 40 }} />
+          )}
+        </SafeAreaView>
+      </Modal>
+    </>
   );
 }
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+/** Modal QR frame: nearly full width, larger minimum for easier customer scanning */
+const QR_FRAME = Math.round(Math.min(440, Math.max(304, SCREEN_WIDTH - 44)));
+const QR_INNER = QR_FRAME + 220;
 
 const styles = StyleSheet.create({
   card: {
@@ -502,6 +755,29 @@ const styles = StyleSheet.create({
     flexDirection: 'column',
     alignItems: 'flex-start',
     gap: 4,
+  },
+  codBanner: {
+    marginTop: -6,
+    marginBottom: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: riderTheme.radius.md,
+    backgroundColor: riderTheme.colors.warningSoft,
+    borderWidth: 1,
+    borderColor: riderTheme.colors.warning,
+  },
+  codBannerTitle: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: riderTheme.colors.warning,
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+    marginBottom: 4,
+  },
+  codBannerAmount: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: riderTheme.colors.textPrimary,
   },
   orderLabel: {
     fontSize: 10,
@@ -687,6 +963,13 @@ const styles = StyleSheet.create({
     color: riderTheme.colors.textPrimary,
     marginBottom: 12,
   },
+  modalHelpText: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: riderTheme.colors.textSecondary,
+    lineHeight: 19,
+    marginBottom: 12,
+  },
   modalInput: {
     borderWidth: 2,
     borderColor: riderTheme.colors.border,
@@ -730,6 +1013,113 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
     color: riderTheme.colors.textInverse,
+  },
+  codModalSubtitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: riderTheme.colors.textSecondary,
+    lineHeight: 20,
+    marginBottom: 16,
+  },
+  codPayRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 14,
+  },
+  codQrButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 14,
+    borderRadius: riderTheme.radius.lg,
+    borderWidth: 2,
+    borderColor: riderTheme.colors.primary,
+    backgroundColor: riderTheme.colors.surface,
+  },
+  codQrButtonText: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: riderTheme.colors.primary,
+  },
+  codCashButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 14,
+    borderRadius: riderTheme.radius.lg,
+    borderWidth: 2,
+    borderColor: riderTheme.colors.success,
+    backgroundColor: riderTheme.colors.surface,
+  },
+  codCashButtonText: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: riderTheme.colors.successDark,
+  },
+  modalCancelButtonWide: {
+    backgroundColor: riderTheme.colors.surfaceMuted,
+    borderRadius: riderTheme.radius.lg,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  qrModalRoot: {
+    flex: 1,
+    backgroundColor: riderTheme.colors.background,
+    paddingHorizontal: 20,
+  },
+  qrModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+    marginBottom: 8,
+  },
+  qrModalTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: riderTheme.colors.textPrimary,
+  },
+  qrAmount: {
+    fontSize: 28,
+    fontWeight: '800',
+    color: riderTheme.colors.primary,
+    textAlign: 'center',
+    marginTop: 8,
+  },
+  qrExpiry: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: riderTheme.colors.textSecondary,
+    textAlign: 'center',
+    marginTop: 6,
+    marginBottom: 20,
+  },
+  qrImageWrap: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: riderTheme.colors.surface,
+    borderRadius: riderTheme.radius.xl,
+    padding: 0,
+    borderWidth: 1,
+    borderColor: riderTheme.colors.borderLight,
+    alignSelf: 'center',
+    width: QR_FRAME,
+  },
+  qrImage: {
+    width: QR_INNER,
+    height: QR_INNER,
+  },
+  qrHint: {
+    fontSize: 14,
+    color: riderTheme.colors.textSecondary,
+    textAlign: 'center',
+    marginTop: 24,
+    lineHeight: 20,
+    paddingHorizontal: 12,
   },
   actionsRow: {
     flexDirection: 'row',

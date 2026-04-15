@@ -338,6 +338,30 @@ export const riderOrderAPI = {
 
   updateOrderStatus: (riderId: string, orderId: string, status: string, otp?: string) =>
     api.put<{ message: string; orderId: string; status: string }>(`/api/v1/riders/${riderId}/orders/${orderId}/status`, { status, otp }),
+
+  /** Razorpay dynamic UPI QR for COD orders with pending payment (assigned rider only). */
+  createUpiQr: (riderId: string, orderId: string) =>
+    api.post<{
+      paymentId: string;
+      qrCodeId: string;
+      imageUrl: string;
+      closeBy: number;
+      amount: number;
+      amountRupees: number;
+    }>(`/api/v1/riders/${riderId}/orders/${orderId}/upi-qr`, {}),
+
+  /** Record cash collected for pay-at-delivery (updates existing Payment row). */
+  markCashCollected: (riderId: string, orderId: string) =>
+    api.post<{ verified: boolean; paymentId: string; orderId: string }>(
+      `/api/v1/riders/${riderId}/orders/${orderId}/cash-collected`,
+      {}
+    ),
+};
+
+/** Poll payment status (same backend as customer app; used after UPI QR scan). */
+export const riderPaymentAPI = {
+  getPayment: (paymentId: string) =>
+    api.get<{ paymentId: string; paymentStatus: string; amount?: number }>(`/api/v1/payments/${paymentId}`),
 };
 
 // Rider Status APIs

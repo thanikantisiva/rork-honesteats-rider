@@ -307,6 +307,7 @@ export default function OrdersScreen() {
                   onStartDelivery={order.status === 'PICKED_UP' ? () => handleStartDelivery(order.orderId) : undefined}
                   onMarkDelivered={order.status === 'OUT_FOR_DELIVERY' ? () => handleMarkDelivered(order.orderId) : undefined}
                   onStartPickupProcess={order.status === 'RIDER_ASSIGNED' ? () => handleStartPickupProcess(order.orderId) : undefined}
+                  riderId={rider?.riderId}
                   riderLocation={currentLocation || undefined}
                 />
               ))}

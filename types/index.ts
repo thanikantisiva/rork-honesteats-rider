@@ -30,6 +30,9 @@ export interface RiderOrder {
   deliveryFee: number;
   platformFee: number;
   grandTotal: number;
+  /** From order e.g. UPI, COD */
+  paymentMethod?: string;
+  paymentId?: string;
   status: OrderStatus;
   riderId?: string;
   deliveryAddress: string;

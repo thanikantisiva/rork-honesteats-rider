@@ -4,15 +4,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import {
-  StyleSheet,
-  Text,
-  View,
-  ScrollView,
-  TouchableOpacity,
-  Linking,
-  ActivityIndicator,
-} from 'react-native';
+import { StyleSheet, Text, View, ScrollView, TouchableOpacity, Linking, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, Stack } from 'expo-router';
 import { MapPin, Phone, Navigation } from 'lucide-react-native';
@@ -28,12 +20,14 @@ export default function OrderDetailsScreen() {
   const { AlertComponent } = useThemedAlert();
   const [order, setOrder] = useState<RiderOrder | null>(null);
 
+  const orderIdKey = String(params.id ?? params.orderId ?? '');
+
   useEffect(() => {
-    const foundOrder = orders.find((o) => o.orderId === params.id);
+    const foundOrder = orders.find((o) => o.orderId === orderIdKey);
     if (foundOrder) {
       setOrder(foundOrder);
     }
-  }, [params.id, orders]);
+  }, [orderIdKey, orders]);
 
   if (!order) {
     return (
@@ -47,7 +41,7 @@ export default function OrderDetailsScreen() {
     Linking.openURL(`tel:${phoneNumber}`);
   };
 
-  const handleNavigate = (lat: number, lng: number, label: string) => {
+  const handleNavigate = (lat: number, lng: number, _label: string) => {
     const url = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&travelmode=driving`;
     Linking.openURL(url);
   };
@@ -66,6 +60,15 @@ export default function OrderDetailsScreen() {
             </View>
             <StatusBadge status={order.status} />
           </View>
+
+          {(order.paymentMethod || '').toUpperCase() === 'COD' && (
+            <View style={styles.codStrip}>
+              <Text style={styles.codStripTitle}>Cash on delivery</Text>
+              <Text style={styles.codStripText}>
+                If the customer already confirmed COD in the app, payment shows as paid — you only enter the delivery OTP. If payment is still pending, you will collect ₹{Number(order.grandTotal).toFixed(0)} (UPI QR or cash) first, then the OTP.
+              </Text>
+            </View>
+          )}
 
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Pickup Location</Text>
@@ -126,7 +129,9 @@ export default function OrderDetailsScreen() {
             <View style={styles.card}>
               {order.items.map((item, index) => (
                 <View key={index} style={styles.itemRow}>
-                  <Text style={styles.itemName}>{item.quantity}x {item.name}</Text>
+                  <Text style={styles.itemName}>
+                    {item.quantity}x {item.name}
+                  </Text>
                   <Text style={styles.itemPrice}>Rs {item.price * item.quantity}</Text>
                 </View>
               ))}
@@ -289,6 +294,29 @@ const styles = StyleSheet.create({
     fontSize: 17,
     fontWeight: '800',
     color: riderTheme.colors.success,
+  },
+  codStrip: {
+    backgroundColor: riderTheme.colors.warningSoft,
+    borderRadius: riderTheme.radius.lg,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: riderTheme.colors.warning,
+    marginHorizontal: 20,
+    marginTop: 16,
+  },
+  codStripTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: riderTheme.colors.warningDark,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 6,
+  },
+  codStripText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: riderTheme.colors.textPrimary,
+    lineHeight: 22,
   },
   infoNote: {
     backgroundColor: riderTheme.colors.infoSoft,
