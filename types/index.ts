@@ -51,7 +51,11 @@ export interface RiderOrder {
   createdAt: string;
   calculatedFeeResponse?: RiderOrderCalculatedFeeResponse;
   revenue?: {
-    riderRevenue?: { finalPayout?: number };
+    riderRevenue?: {
+      finalPayout?: number;
+      riderSettlementAmount?: number;
+      longDistanceBonus?: number;
+    };
     [key: string]: unknown;
   };
 }
@@ -101,5 +105,6 @@ export interface EarningsSummary {
   totalDeliveries: number;
   totalEarnings: number;
   totalTips: number;
+  totalIncentives?: number;
   dailyBreakdown?: Earnings[];
 }

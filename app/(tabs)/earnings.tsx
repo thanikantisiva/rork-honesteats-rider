@@ -14,7 +14,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { Stack } from 'expo-router';
-import { IndianRupee, TrendingUp, Package, Clock, Calendar, CheckCircle2, ChevronDown } from 'lucide-react-native';
+import { IndianRupee, TrendingUp, Package, Clock, Calendar, CheckCircle2, ChevronDown, Award } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '@/contexts/AuthContext';
 import { riderEarningsAPI } from '@/lib/api';
@@ -175,6 +175,14 @@ export default function EarningsScreen() {
                     </View>
                     <Text style={styles.statValue}>₹{(earnings.totalTips || 0).toFixed(0)}</Text>
                     <Text style={styles.statLabel}>Tips</Text>
+                  </View>
+
+                  <View style={styles.statCard}>
+                    <View style={styles.statIcon}>
+                      <Award size={18} color={riderTheme.colors.primary} strokeWidth={2.5} />
+                    </View>
+                    <Text style={styles.statValue}>₹{(earnings.totalIncentives || 0).toFixed(0)}</Text>
+                    <Text style={styles.statLabel}>Incentives</Text>
                   </View>
                 </View>
               </View>

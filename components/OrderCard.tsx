@@ -36,14 +36,31 @@ function asFiniteNumber(v: unknown): number | undefined {
   return undefined;
 }
 
-/** Job-card earnings: settlement from calculate-fee, else revenue snapshot, else delivery fee */
-function getJobCardRiderEarnings(order: RiderOrder): number {
-  const settlement = asFiniteNumber(order.calculatedFeeResponse?.riderSettlementAmount);
-  if (settlement !== undefined) return settlement;
-  const fromRevenue = asFiniteNumber(order.revenue?.riderRevenue?.finalPayout);
-  if (fromRevenue !== undefined) return fromRevenue;
-  const fee = asFiniteNumber(order.deliveryFee);
-  return fee ?? 0;
+/**
+ * Job-card earnings breakdown.
+ * Prefers revenue.riderRevenue (set after order CONFIRMED by the revenue calculator,
+ * includes longDistanceBonus when distance > 6km). Falls back to calculate-fee
+ * settlement, then legacy deliveryFee.
+ */
+function getJobCardRiderEarnings(order: RiderOrder): {
+  total: number;
+  settlement: number;
+  bonus: number;
+} {
+  const rev = order.revenue?.riderRevenue;
+  const revSettlement = asFiniteNumber(rev?.riderSettlementAmount);
+  const revBonus = asFiniteNumber(rev?.longDistanceBonus);
+  const revTotal = asFiniteNumber(rev?.finalPayout);
+  if (revTotal !== undefined || revSettlement !== undefined) {
+    const settlement = revSettlement ?? revTotal ?? 0;
+    const bonus = revBonus ?? 0;
+    const total = revTotal ?? settlement + bonus;
+    return { total, settlement, bonus };
+  }
+  const feeSettlement = asFiniteNumber(order.calculatedFeeResponse?.riderSettlementAmount);
+  if (feeSettlement !== undefined) return { total: feeSettlement, settlement: feeSettlement, bonus: 0 };
+  const fee = asFiniteNumber(order.deliveryFee) ?? 0;
+  return { total: fee, settlement: fee, bonus: 0 };
 }
 
 /** Amount only — rupee is shown by IndianRupee icon next to this text */
@@ -426,17 +443,36 @@ export function OrderCard({ order, onPress, onAccept, onReject, onStartPickupPro
       </View>
 
       {/* Order Details */}
-      <View style={styles.detailsRow}>
-        <View style={styles.detailChip}>
-          <Package size={16} color={riderTheme.colors.primary} strokeWidth={2.5} />
-          <Text style={styles.detailText}>{order.items.length} {order.items.length === 1 ? 'item' : 'items'}</Text>
-        </View>
-        <View style={styles.earningsChip}>
-          <IndianRupee size={16} color={riderTheme.colors.success} strokeWidth={2.5} />
-          <Text style={styles.earningsText}>{formatJobEarningsRupees(getJobCardRiderEarnings(order))}</Text>
-          <Text style={styles.earningsLabel}>earnings</Text>
-        </View>
-      </View>
+      {(() => {
+        const earnings = getJobCardRiderEarnings(order);
+        const hasBonus = earnings.bonus > 0;
+        return (
+          <View style={styles.detailsRow}>
+            <View style={styles.detailChip}>
+              <Package size={16} color={riderTheme.colors.primary} strokeWidth={2.5} />
+              <Text style={styles.detailText}>{order.items.length} {order.items.length === 1 ? 'item' : 'items'}</Text>
+            </View>
+            <View style={styles.earningsChip}>
+              <IndianRupee size={16} color={riderTheme.colors.success} strokeWidth={2.5} />
+              <Text style={styles.earningsText}>{formatJobEarningsRupees(earnings.total)}</Text>
+              <Text style={styles.earningsLabel}>{hasBonus ? 'total' : 'earnings'}</Text>
+            </View>
+          </View>
+        );
+      })()}
+
+      {/* Earnings breakdown: fee + long-distance bonus (only when bonus present) */}
+      {(() => {
+        const earnings = getJobCardRiderEarnings(order);
+        if (earnings.bonus <= 0) return null;
+        return (
+          <View style={styles.earningsBreakdownRow}>
+            <Text style={styles.earningsBreakdownText}>
+              Fee ₹{formatJobEarningsRupees(earnings.settlement)} + Bonus ₹{formatJobEarningsRupees(earnings.bonus)}
+            </Text>
+          </View>
+        );
+      })()}
 
       {/* Pickup OTP Badge */}
       {['RIDER_ASSIGNED', 'PICKED_UP'].includes(order.status) && order.pickupOtp && (
@@ -901,6 +937,16 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '600',
     color: riderTheme.colors.success,
+  },
+  earningsBreakdownRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    marginTop: 4,
+  },
+  earningsBreakdownText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: riderTheme.colors.textSecondary,
   },
   otpBadge: {
     flexDirection: 'row',
