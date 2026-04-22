@@ -13,12 +13,37 @@
  */
 
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
 import * as TaskManager from 'expo-task-manager';
 import { riderStatusAPI } from '@/lib/api';
 import { syncRiderFcmTokenToBackend } from '@/services/firebase-messaging';
 import { useAuth } from './AuthContext';
 import { BACKGROUND_LOCATION_TASK } from '@/tasks/background-location';
+
+/**
+ * Key for the Prominent Disclosure consent flag. Must match
+ * `DISCLOSURE_FLAG_KEY` in `AuthContext.tsx`. Defined here (instead of
+ * imported) to avoid a circular import between the two contexts.
+ */
+const DISCLOSURE_FLAG_KEY = '@rider_disclosure_accepted_v1';
+
+/**
+ * Guard: Google Play policy requires an in-app Prominent Disclosure before
+ * any runtime location permission request. This check is a defense-in-depth
+ * safety net — the router in `app/_layout.tsx` already blocks the (tabs)
+ * routes until consent is granted, but code paths like auto-resume on mount
+ * must not slip through.
+ */
+async function hasDisclosureConsent(): Promise<boolean> {
+  try {
+    const flag = await AsyncStorage.getItem(DISCLOSURE_FLAG_KEY);
+    return flag === 'true';
+  } catch (err) {
+    console.warn('⚠️ Could not read disclosure flag:', err);
+    return false;
+  }
+}
 
 interface LocationContextType {
   currentLocation: { lat: number; lng: number } | null;
@@ -52,18 +77,26 @@ export function LocationProvider({ children }: { children: ReactNode }) {
   // Sync isOnline from backend on mount (so UI reflects actual status after app restart)
   useEffect(() => {
     if (!isLoggedIn || !rider) return;
-    riderStatusAPI.getStatus(rider.riderId)
-      .then((data) => {
+    (async () => {
+      // Never resume tracking (and trigger permission prompts) before
+      // the rider has seen and accepted the Prominent Disclosure.
+      const consented = await hasDisclosureConsent();
+      if (!consented) {
+        console.log('⏸️ Skipping auto-resume: disclosure not yet accepted');
+        return;
+      }
+      try {
+        const data = await riderStatusAPI.getStatus(rider.riderId);
         if (data.isActive) {
           setIsOnline(true);
           void syncRiderFcmTokenToBackend(rider.phone);
           // Also resume tracking if rider was left online
           void startTracking();
         }
-      })
-      .catch((err) => {
+      } catch (err) {
         console.warn('⚠️ Could not fetch rider status on mount:', err);
-      });
+      }
+    })();
   }, [isLoggedIn, rider?.riderId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Cleanup when logged out
@@ -104,6 +137,14 @@ export function LocationProvider({ children }: { children: ReactNode }) {
 
   const startTracking = useCallback(async () => {
     if (!rider) return;
+
+    // Prominent Disclosure gate: never request location permissions unless
+    // the rider has seen and accepted the in-app disclosure.
+    const consented = await hasDisclosureConsent();
+    if (!consented) {
+      console.warn('⛔ Refusing to start tracking: disclosure not accepted');
+      return;
+    }
 
     console.log('📍 Starting OS-level location tracking...');
 
@@ -198,6 +239,14 @@ export function LocationProvider({ children }: { children: ReactNode }) {
     try {
       if (!isOnline) {
         console.log('🟢 Going online...');
+
+        // Prominent Disclosure gate — belt-and-braces with the router guard
+        // in `_layout.tsx`. Never trigger the native permission dialog until
+        // the rider has tapped "I Agree and Continue" on the disclosure screen.
+        const consented = await hasDisclosureConsent();
+        if (!consented) {
+          throw new Error('Disclosure not accepted');
+        }
 
         const { status } = await Location.requestForegroundPermissionsAsync();
         if (status !== 'granted') throw new Error('Location permission not granted');

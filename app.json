@@ -2,7 +2,7 @@
     "expo":  {
                  "name":  "YumDude Rider",
                  "slug":  "yumdude-rider",
-                 "version":  "1.0.4",
+                 "version":  "1.0.6",
                  "orientation":  "portrait",
                  "icon":  "./assets/images/icon.png",
                  "scheme":  "rork-rider",
@@ -18,9 +18,9 @@
                              "bundleIdentifier":  "app.rork.honesteats.rider",
                              "googleServicesFile":  "./GoogleService-Info.plist",
                              "infoPlist":  {
-                                               "NSLocationWhenInUseUsageDescription":  "We need your location to assign nearby orders and track deliveries.",
-                                               "NSLocationAlwaysAndWhenInUseUsageDescription":  "We need your location to assign nearby orders and track deliveries.",
-                                               "NSLocationAlwaysUsageDescription":  "We need your location to assign nearby orders and track deliveries.",
+                                               "NSLocationWhenInUseUsageDescription":  "YumDude Rider collects your precise location to match you with nearby orders, navigate to pickup and drop-off, and share live ETA with customers and restaurants.",
+                                               "NSLocationAlwaysAndWhenInUseUsageDescription":  "YumDude Rider collects your precise location to match you with nearby orders, navigate to pickup and drop-off, and track deliveries even when the app is closed or not in use. Background tracking only runs while you are online.",
+                                               "NSLocationAlwaysUsageDescription":  "YumDude Rider collects your precise location to track deliveries and share live ETA with customers even when the app is closed or not in use. Background tracking only runs while you are online.",
                                                "NSCameraUsageDescription":  "We need camera access to capture document photos for verification.",
                                                "NSPhotoLibraryUsageDescription":  "We need photo library access to upload documents for verification.",
                                                "UIBackgroundModes":  [
@@ -33,7 +33,7 @@
                                                       "foregroundImage":  "./assets/images/adaptive-icon.png",
                                                       "backgroundColor":  "#FFFFFF"
                                                   },
-                                 "versionCode":  4,
+                                 "versionCode":  6,
                                  "package":  "app.rork.honesteats.rider",
                                  "googleServicesFile":  "./google-services.json",
                                  "softwareKeyboardLayoutMode":  "pan",
@@ -62,9 +62,9 @@
                                  [
                                      "expo-location",
                                      {
-                                         "locationAlwaysAndWhenInUsePermission":  "We need your location to assign nearby orders and track deliveries.",
-                                         "locationWhenInUsePermission":  "We need your location to assign nearby orders and track deliveries.",
-                                         "locationAlwaysPermission":  "We need your location to assign nearby orders and track deliveries.",
+                                         "locationAlwaysAndWhenInUsePermission":  "YumDude Rider collects your precise location to match you with nearby orders, navigate to pickup and drop-off, and track deliveries even when the app is closed or not in use. Background tracking only runs while you are online.",
+                                         "locationWhenInUsePermission":  "YumDude Rider collects your precise location to match you with nearby orders, navigate to pickup and drop-off, and share live ETA with customers and restaurants.",
+                                         "locationAlwaysPermission":  "YumDude Rider collects your precise location to track deliveries and share live ETA with customers even when the app is closed or not in use. Background tracking only runs while you are online.",
                                          "isAndroidBackgroundLocationEnabled":  true,
                                          "isAndroidForegroundServiceEnabled":  true
                                      }

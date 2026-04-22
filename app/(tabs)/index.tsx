@@ -3,7 +3,7 @@
  * Main screen showing assigned orders
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   StyleSheet,
   Text,
@@ -15,9 +15,8 @@ import {
   ActivityIndicator,
   Linking,
 } from 'react-native';
-import * as Location from 'expo-location';
 import { useRouter, Stack } from 'expo-router';
-import { Package, Bike, Star } from 'lucide-react-native';
+import { Package, Bike, Star, MapPin } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useOrders } from '@/contexts/OrdersContext';
 import { useLocation } from '@/contexts/LocationContext';
@@ -47,10 +46,11 @@ export default function OrdersScreen() {
   const addLoadingOrder = (id: string) => setLoadingOrderIds((prev) => new Set(prev).add(id));
   const removeLoadingOrder = (id: string) => setLoadingOrderIds((prev) => { const n = new Set(prev); n.delete(id); return n; });
 
-  // Request location permission on mount — covers riders already logged in who skip the login screen
-  useEffect(() => {
-    Location.requestForegroundPermissionsAsync();
-  }, []);
+  // NOTE: Location permission is intentionally NOT requested on mount.
+  // Google Play policy requires an in-app Prominent Disclosure immediately
+  // before any location permission prompt. Permissions are now requested only
+  // when the rider explicitly taps "Go Online" (see `LocationContext.toggleOnline`),
+  // and only after the disclosure in `app/disclosure.tsx` has been accepted.
 
   React.useEffect(() => {
     if (selectedTab === 'completed' && !hasLoadedCompleted) {
@@ -220,6 +220,17 @@ export default function OrdersScreen() {
             <View style={styles.statusCard}>
               <Text style={styles.statusLabel}>Active Orders</Text>
               <Text style={styles.statusValue}>{activeOrders.length}</Text>
+            </View>
+          )}
+
+          {/* Live tracking disclosure banner — visible whenever the rider is
+              online, reinforcing that location is being collected (Play policy). */}
+          {isOnline && (
+            <View style={styles.trackingBanner}>
+              <MapPin size={14} color={riderTheme.colors.accentDark} strokeWidth={2.5} />
+              <Text style={styles.trackingBannerText}>
+                Location is being tracked to assign orders and share ETA. Go offline to stop.
+              </Text>
             </View>
           )}
         </View>
@@ -417,6 +428,25 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '800',
     color: riderTheme.colors.primary,
+  },
+  trackingBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: riderTheme.colors.accentSoft,
+    borderRadius: riderTheme.radius.md,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginTop: 10,
+    borderLeftWidth: 3,
+    borderLeftColor: riderTheme.colors.accent,
+  },
+  trackingBannerText: {
+    flex: 1,
+    fontSize: 11,
+    fontWeight: '600',
+    color: riderTheme.colors.accentDark,
+    lineHeight: 16,
   },
   tabsContainer: {
     backgroundColor: riderTheme.colors.surface,

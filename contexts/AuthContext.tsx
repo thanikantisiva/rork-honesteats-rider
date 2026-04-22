@@ -19,10 +19,29 @@ interface AuthContextType {
   rider: Rider | null;
   isLoading: boolean;
   isLoggedIn: boolean;
+  /**
+   * True when the rider has accepted the in-app Prominent Disclosure.
+   * Persisted in AsyncStorage under `@rider_disclosure_accepted_v1`.
+   * Required by Google Play policy before any background location permission
+   * prompt is shown.
+   */
+  disclosureAccepted: boolean;
   login: (rider: Rider) => Promise<void>;
   logout: (goOfflineCallback?: () => Promise<void>) => Promise<void>;
   updateRider: (updates: Partial<Rider>) => Promise<void>;
+  /**
+   * Persist the rider's explicit tap-to-accept on the Disclosure screen.
+   * Called from `app/disclosure.tsx` after the user taps "I Agree and Continue".
+   */
+  acceptDisclosure: () => Promise<void>;
 }
+
+/**
+ * Key for the Prominent Disclosure consent flag. Bump the suffix (`_v2`, etc.)
+ * if the disclosure copy changes materially and we need to re-prompt existing
+ * riders for fresh consent.
+ */
+const DISCLOSURE_FLAG_KEY = '@rider_disclosure_accepted_v1';
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
@@ -30,6 +49,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [rider, setRider] = useState<Rider | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [disclosureAccepted, setDisclosureAccepted] = useState(false);
 
   useEffect(() => {
     loadRiderSession();
@@ -46,6 +66,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const phone = await AsyncStorage.getItem('@rider_phone');
       const name = await AsyncStorage.getItem('@rider_name');
       const jwtToken = await AsyncStorage.getItem('@jwt_token');
+      const disclosure = await AsyncStorage.getItem(DISCLOSURE_FLAG_KEY);
+      setDisclosureAccepted(disclosure === 'true');
 
       const clearSession = async (reason: string) => {
         console.warn(`⚠️ Clearing stale session: ${reason}`);
@@ -56,7 +78,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           '@rider_phone',
           '@rider_name',
           '@jwt_token',
+          DISCLOSURE_FLAG_KEY,
         ]);
+        setDisclosureAccepted(false);
       };
 
       if (loggedIn === 'true' && riderId && phone && name) {
@@ -101,8 +125,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await AsyncStorage.setItem('@rider_id', riderData.riderId);
     await AsyncStorage.setItem('@rider_phone', riderData.phone);
     await AsyncStorage.setItem('@rider_name', riderData.name);
+    // Re-check the disclosure flag so the router can gate correctly for this
+    // rider (fresh installs / different rider on same device).
+    const disclosure = await AsyncStorage.getItem(DISCLOSURE_FLAG_KEY);
+    setDisclosureAccepted(disclosure === 'true');
     setRider(riderData);
     setIsLoggedIn(true);
+  };
+
+  const acceptDisclosure = async () => {
+    await AsyncStorage.setItem(DISCLOSURE_FLAG_KEY, 'true');
+    setDisclosureAccepted(true);
+    console.log('✅ Prominent disclosure accepted and persisted');
   };
 
   const logout = async (goOfflineCallback?: () => Promise<void>) => {
@@ -133,7 +167,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       '@rider_name',
       '@jwt_token',
       '@bg_last_location',
+      DISCLOSURE_FLAG_KEY,
     ]);
+    setDisclosureAccepted(false);
     
     // Clear JWT token from API client
     api.setJWTToken(null);
@@ -169,7 +205,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ rider, isLoading, isLoggedIn, login, logout, updateRider }}>
+    <AuthContext.Provider
+      value={{
+        rider,
+        isLoading,
+        isLoggedIn,
+        disclosureAccepted,
+        login,
+        logout,
+        updateRider,
+        acceptDisclosure,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );

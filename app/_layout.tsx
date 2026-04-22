@@ -59,7 +59,7 @@ initializeFirebaseAppCheck();
 const queryClient = new QueryClient();
 
 function RootLayoutNav() {
-  const { isLoggedIn, isLoading } = useAuth();
+  const { isLoggedIn, isLoading, disclosureAccepted } = useAuth();
   const { refreshOrders, acceptOrder, rejectOrder } = useOrders();
   const segments = useSegments();
   const router = useRouter();
@@ -154,14 +154,31 @@ function RootLayoutNav() {
   useEffect(() => {
     if (isLoading) return;
 
-    const inAuthGroup = ['welcome', 'login', 'signup', 'verification-pending'].includes(segments[0] as any);
+    const currentSegment = segments[0] as string | undefined;
+    const inAuthGroup = ['welcome', 'login', 'signup', 'verification-pending'].includes(
+      currentSegment as any,
+    );
+    const onDisclosure = currentSegment === 'disclosure';
 
     if (!isLoggedIn && !inAuthGroup) {
       router.replace('/welcome');
-    } else if (isLoggedIn && inAuthGroup) {
+      return;
+    }
+
+    if (isLoggedIn && !disclosureAccepted) {
+      // Logged in but hasn't accepted the Prominent Disclosure yet.
+      // Block access to the tabs (where "Go Online" triggers background location
+      // permission) and anywhere except the disclosure screen itself.
+      if (!onDisclosure) {
+        router.replace('/disclosure');
+      }
+      return;
+    }
+
+    if (isLoggedIn && disclosureAccepted && (inAuthGroup || onDisclosure)) {
       router.replace('/(tabs)');
     }
-  }, [isLoggedIn, isLoading, segments, router]);
+  }, [isLoggedIn, isLoading, disclosureAccepted, segments, router]);
 
   useEffect(() => {
     if (!isLoading) {
@@ -186,6 +203,10 @@ function RootLayoutNav() {
         <Stack.Screen name="login" options={{ headerShown: false }} />
         <Stack.Screen name="signup" options={{ headerShown: false }} />
         <Stack.Screen name="verification-pending" options={{ headerShown: false }} />
+        <Stack.Screen
+          name="disclosure"
+          options={{ headerShown: false, gestureEnabled: false }}
+        />
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="edit-profile" options={{ headerShown: false }} />
         <Stack.Screen name="order-details" options={{ headerShown: true, title: 'Order Details' }} />

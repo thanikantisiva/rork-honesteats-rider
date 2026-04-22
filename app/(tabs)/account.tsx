@@ -6,7 +6,8 @@
 import React, { useState } from 'react';
 import { StyleSheet, Text, View, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { useRouter, Stack, useFocusEffect } from 'expo-router';
-import { User, HelpCircle, LogOut, ChevronRight, Shield } from 'lucide-react-native';
+import { User, HelpCircle, LogOut, ChevronRight, Shield, Lock } from 'lucide-react-native';
+import { Linking } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLocation } from '@/contexts/LocationContext';
@@ -58,6 +59,26 @@ export default function AccountScreen() {
       'Contact our support team at support@honesteats.com or call +91-1234567890',
       undefined,
       'info'
+    );
+  };
+
+  const handleDataAndPrivacy = () => {
+    showAlert(
+      'Data and Privacy',
+      'YumDude Rider collects your precise location (including in the background while you are online) to assign nearby orders, show routes, and share live ETA. We also use your phone number for sign-in, your camera/photos for document verification, and notifications for order alerts.\n\nYour location and contact details are shared with the assigned restaurant and customer during active deliveries, and with our backend for assignment. We do not sell your data.',
+      [
+        { text: 'Close', style: 'cancel' },
+        {
+          text: 'View full policy',
+          style: 'default',
+          onPress: () => {
+            Linking.openURL('https://yumdude.com/rider-policy').catch((err) => {
+              console.error('Failed to open policy URL:', err);
+            });
+          },
+        },
+      ],
+      'info',
     );
   };
 
@@ -139,6 +160,17 @@ export default function AccountScreen() {
               <View style={styles.menuContent}>
                 <Text style={styles.menuTitle}>Edit Profile</Text>
                 <Text style={styles.menuDesc}>Update your personal information</Text>
+              </View>
+              <ChevronRight size={20} color={riderTheme.colors.textMuted} strokeWidth={2} />
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.menuItem} activeOpacity={0.85} onPress={handleDataAndPrivacy}>
+              <View style={[styles.menuIconWrap, { backgroundColor: riderTheme.colors.accentSoft }]}>
+                <Lock size={20} color={riderTheme.colors.accent} strokeWidth={2.5} />
+              </View>
+              <View style={styles.menuContent}>
+                <Text style={styles.menuTitle}>Data and Privacy</Text>
+                <Text style={styles.menuDesc}>Review what data we collect and how it's used</Text>
               </View>
               <ChevronRight size={20} color={riderTheme.colors.textMuted} strokeWidth={2} />
             </TouchableOpacity>
