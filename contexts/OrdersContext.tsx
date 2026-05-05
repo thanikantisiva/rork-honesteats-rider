@@ -9,6 +9,7 @@ import { RiderOrder } from '@/types';
 import { useAuth } from './AuthContext';
 import { useLocation } from './LocationContext';
 import { startNewOrderAlert, stopNewOrderAlert, unloadNewOrderAlert } from '@/services/order-alert';
+import { stopRiderRideAlert } from '@/services/rider-floating-service';
 
 interface OrdersContextType {
   orders: RiderOrder[];
@@ -51,6 +52,11 @@ export function OrdersProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const clearAlertForOrder = useCallback(async (orderId: string) => {
+    // Always stop the native ride alert for this order — the order may have
+    // been alerted via FCM (which doesn't touch alertingOrderIdsRef) so we
+    // can't gate this on the local set membership.
+    stopRiderRideAlert(orderId);
+
     if (!alertingOrderIdsRef.current.delete(orderId)) {
       return;
     }
@@ -142,6 +148,17 @@ export function OrdersProvider({ children }: { children: ReactNode }) {
         alertingOrderIdsRef.current = new Set(
           [...alertingOrderIdsRef.current].filter((orderId) => currentAlertableOrderIds.has(orderId))
         );
+      }
+
+      // Detect orders that *were* alerting but the server says are no longer
+      // pending (rider accepted/rejected on another device, or the offer
+      // expired). Silence their native rings instantly instead of waiting up
+      // to 30 s for the :location process's own poll to catch up.
+      const droppedAlertOrderIds = [...alertingOrderIdsRef.current].filter(
+        (orderId) => !currentAlertableOrderIds.has(orderId),
+      );
+      for (const orderId of droppedAlertOrderIds) {
+        stopRiderRideAlert(orderId);
       }
 
       alertingOrderIdsRef.current = new Set(

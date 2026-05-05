@@ -197,22 +197,31 @@ export default function OrdersScreen() {
               </View>
             </View>
             
-            {/* Floating Online Toggle Card */}
-            <TouchableOpacity
-              style={[styles.onlineCard, isOnline && styles.onlineCardActive]}
-              onPress={handleToggleOnline}
-              disabled={isTogglingOnline}
-              activeOpacity={0.85}
-            >
-              {isTogglingOnline ? (
-                <ActivityIndicator size="small" color={isOnline ? riderTheme.colors.danger : riderTheme.colors.success} />
-              ) : (
-                <View style={[styles.onlineDot, isOnline && styles.onlineDotActive]} />
-              )}
+            {/* Floating Online Toggle Card — switch is the source of truth
+                for online state; the pill wrapper just inherits an active
+                tint so the rider can tell at a glance whether they're live. */}
+            <View style={[styles.onlineCard, isOnline && styles.onlineCardActive]}>
               <Text style={[styles.onlineText, isOnline && styles.onlineTextActive]}>
                 {isOnline ? 'Online' : 'Offline'}
               </Text>
-            </TouchableOpacity>
+              {isTogglingOnline ? (
+                <ActivityIndicator
+                  size="small"
+                  color={isOnline ? riderTheme.colors.successDark : riderTheme.colors.textMuted}
+                  style={styles.onlineSwitchSpinner}
+                />
+              ) : (
+                <Switch
+                  value={isOnline}
+                  onValueChange={handleToggleOnline}
+                  disabled={isTogglingOnline}
+                  trackColor={{ false: riderTheme.colors.border, true: riderTheme.colors.success }}
+                  thumbColor="#FFFFFF"
+                  ios_backgroundColor={riderTheme.colors.border}
+                  style={styles.onlineSwitch}
+                />
+              )}
+            </View>
           </View>
           
           {/* Status Info Card */}
@@ -378,10 +387,13 @@ const styles = StyleSheet.create({
   onlineCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 10,
     backgroundColor: riderTheme.colors.surfaceMuted,
-    paddingHorizontal: 14,
-    paddingVertical: 9,
+    paddingLeft: 14,
+    // Right padding is small so the Switch thumb lines up with the pill edge
+    // without looking cramped against the right border.
+    paddingRight: 8,
+    paddingVertical: 4,
     borderRadius: riderTheme.radius.full,
     borderWidth: 1.5,
     borderColor: riderTheme.colors.border,
@@ -391,14 +403,17 @@ const styles = StyleSheet.create({
     backgroundColor: riderTheme.colors.successSoft,
     borderColor: riderTheme.colors.success,
   },
-  onlineDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: riderTheme.colors.textMuted,
+  onlineSwitch: {
+    // Slightly shrink the Switch so it tucks neatly into the header pill
+    // (RN Switch is ~50pt wide on iOS and feels oversized at default scale
+    // next to the small "Online" label).
+    transform: [{ scaleX: 0.85 }, { scaleY: 0.85 }],
   },
-  onlineDotActive: {
-    backgroundColor: riderTheme.colors.success,
+  onlineSwitchSpinner: {
+    // Reserve roughly the same footprint the Switch occupies so the pill
+    // doesn't visually jump while the toggle request is in flight.
+    width: 44,
+    height: 28,
   },
   onlineText: {
     fontSize: 12,

@@ -21,6 +21,7 @@ import {
   cancelRiderLoopingPushNotifications,
 } from '@/services/firebase-messaging';
 import { stopNewOrderAlert, requestSkipNextInAppOrderAlertStart } from '@/services/order-alert';
+import { stopRiderRideAlert } from '@/services/rider-floating-service';
 import { StartupSplash } from '@/components/StartupSplash';
 import { riderTheme } from '@/theme/riderTheme';
 import appCheck from '@react-native-firebase/app-check';
@@ -139,11 +140,15 @@ function RootLayoutNav() {
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps — intentionally one-time; refs stay fresh
 
-  // When the rider opens the app: stop looping push sounds (Android) and in-app ring; then refresh orders.
+  // When the rider opens the app: stop the native looping ride alert
+  // (MediaPlayer + Vibrator in the :location process), stop looping push
+  // sounds, stop the in-app ring, then refresh orders so the offer card
+  // shows up immediately.
   useEffect(() => {
     const sub = AppState.addEventListener('change', (state) => {
       if (state !== 'active') return;
       requestSkipNextInAppOrderAlertStart();
+      stopRiderRideAlert(null);
       void cancelRiderLoopingPushNotifications();
       void stopNewOrderAlert();
       void refreshOrdersRef.current(true);

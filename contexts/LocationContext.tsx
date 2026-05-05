@@ -16,8 +16,9 @@ import React, { createContext, useContext, useState, useEffect, useCallback, use
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
 import * as TaskManager from 'expo-task-manager';
-import { riderStatusAPI } from '@/lib/api';
+import { getApiBaseUrl, riderStatusAPI } from '@/lib/api';
 import { syncRiderFcmTokenToBackend } from '@/services/firebase-messaging';
+import { startRiderFloatingService, stopRiderFloatingService } from '@/services/rider-floating-service';
 import { useAuth } from './AuthContext';
 import { BACKGROUND_LOCATION_TASK } from '@/tasks/background-location';
 
@@ -57,6 +58,16 @@ const LocationContext = createContext<LocationContextType | undefined>(undefined
 
 /** Must be less than RIDER_LAST_SEEN_STALE_SECONDS on the backend (currently 90 s). */
 const HEARTBEAT_INTERVAL_MS = 25_000;
+
+async function startNativeFloatingTracking(riderId: string) {
+  const token = await AsyncStorage.getItem('@jwt_token');
+  if (!token) {
+    console.warn('⚠️ Skipping floating tracking: JWT token missing');
+    return;
+  }
+
+  startRiderFloatingService(riderId, token, getApiBaseUrl());
+}
 
 export function LocationProvider({ children }: { children: ReactNode }) {
   const { rider, isLoggedIn } = useAuth();
@@ -99,14 +110,30 @@ export function LocationProvider({ children }: { children: ReactNode }) {
     })();
   }, [isLoggedIn, rider?.riderId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Cleanup when logged out
+  // Cleanup when logged out — also tear down the native floating bubble so it
+  // doesn't keep running after a forced session clear (e.g. JWT rejected).
+  // We DO NOT stop the native service from the unmount cleanup, otherwise
+  // swiping the app from recents would kill the bubble + location pushes.
   useEffect(() => {
     if (!isLoggedIn) {
+      stopRiderFloatingService();
       void stopTracking();
     }
     return () => { void stopTracking(); };
   }, [isLoggedIn]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  /**
+   * Stops the JS-side tracking layers ONLY:
+   *   • heartbeat interval
+   *   • foreground subscription
+   *   • OS background task (expo-task-manager)
+   *
+   * Does NOT stop the native foreground service / floating bubble — that has
+   * its own lifecycle tied to the rider's online/offline state and must
+   * survive app close, swipe-from-recents, and process death. Stop it via
+   * `stopRiderFloatingService()` only when the rider explicitly goes offline
+   * or logs out.
+   */
   const stopTracking = useCallback(async () => {
     // 1. Clear heartbeat
     if (heartbeatRef.current) {
@@ -230,6 +257,7 @@ export function LocationProvider({ children }: { children: ReactNode }) {
     }, HEARTBEAT_INTERVAL_MS);
 
     setIsTracking(true);
+    await startNativeFloatingTracking(rider.riderId);
     console.log('✅ Location tracking active (OS task + foreground + heartbeat)');
   }, [rider]);
 
@@ -282,6 +310,7 @@ export function LocationProvider({ children }: { children: ReactNode }) {
           }
         }
 
+        stopRiderFloatingService();
         await stopTracking();
         await riderStatusAPI.toggleStatus(rider.riderId, false, finalLat, finalLng);
         setIsOnline(false);
@@ -300,6 +329,7 @@ export function LocationProvider({ children }: { children: ReactNode }) {
       console.log('🔴 Setting rider offline (logout/app close)...');
       const finalLat = currentLocation?.lat;
       const finalLng = currentLocation?.lng;
+      stopRiderFloatingService();
       await stopTracking();
       await riderStatusAPI.toggleStatus(rider.riderId, false, finalLat, finalLng);
       setIsOnline(false);

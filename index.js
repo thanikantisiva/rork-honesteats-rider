@@ -2,16 +2,34 @@ import messaging from '@react-native-firebase/messaging';
 import notifee, { EventType } from '@notifee/react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { displayNotificationFromRemoteMessage, ensureNotificationChannel } from './services/firebase-messaging';
+import { startRiderRideAlert, stopRiderRideAlert } from './services/rider-floating-service';
 
 // IMPORTANT: Import task definition BEFORE expo-router so TaskManager.defineTask
 // is registered in every JS context — including the headless background context
 // created by the OS when it wakes the app to deliver location updates.
 import './tasks/background-location';
 
+const RIDE_ALERT_TYPES = new Set(['order_assigned', 'order_accepted']);
+
 messaging().setBackgroundMessageHandler(async (remoteMessage) => {
   console.log('FCM notification received in background (rider):', remoteMessage);
 
   await ensureNotificationChannel();
+
+  // Fire the looping ring + sticky notification through the native
+  // :location process FIRST. This works even when the JS main process is
+  // about to die — the bubble service is in a separate process and owns
+  // its own MediaPlayer + Vibrator. Without this, Android 8+ would just
+  // play the channel sound once and stop (FLAG_INSISTENT is a no-op when
+  // the channel itself owns the sound).
+  const data = remoteMessage?.data ?? {};
+  if (data.type && RIDE_ALERT_TYPES.has(data.type) && data.orderId) {
+    startRiderRideAlert(
+      String(data.orderId),
+      String(data.restaurantName || 'a nearby restaurant'),
+      Number(data.deliveryFee) || 0,
+    );
+  }
 
   // Notification payloads are shown by the OS in background/quit. Only
   // synthesize a local notification when Firebase delivers data-only content.
@@ -42,14 +60,28 @@ async function resolveApiBaseUrlForBg() {
 notifee.onBackgroundEvent(async ({ type, detail }) => {
   console.log('Notifee background event (rider):', type, detail?.notification?.data);
 
+  const data = detail?.notification?.data ?? {};
+
+  // Tapping the notification body (default action) should silence the ring
+  // immediately — the rider has clearly seen the offer. The launcher intent
+  // also opens the app, which will independently call stopRiderRideAlert(null)
+  // on AppState=active.
+  if (type === EventType.PRESS) {
+    if (data.orderId) stopRiderRideAlert(String(data.orderId));
+    return;
+  }
+
   if (type !== EventType.ACTION_PRESS) return;
 
   const actionId = detail.pressAction?.id;
   if (!actionId || actionId === 'default') return;
 
-  const data = detail.notification?.data ?? {};
   const orderId = data.orderId;
   if (!orderId) return;
+
+  // Stop the loop the instant the rider commits — don't wait for the HTTP
+  // round-trip below.
+  stopRiderRideAlert(String(orderId));
 
   try {
     const [riderId, token, baseUrl] = await Promise.all([

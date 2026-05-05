@@ -8,8 +8,28 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Image, PermissionsAndroid, Platform } from 'react-native';
 import notifee, { AndroidImportance, EventType } from '@notifee/react-native';
 import { userAPI } from '@/lib/api';
+import { startRiderRideAlert, stopRiderRideAlert } from './rider-floating-service';
 
-export const RIDER_NOTIFICATION_CHANNEL_ID = 'rider_orders_ring_v2';
+/**
+ * Bump this suffix (`_v4`, `_v5`...) any time the channel sound, importance,
+ * or vibration pattern changes. Android 8+ notification channels are
+ * IMMUTABLE — a `createChannel` call on an existing id is a no-op for those
+ * settings, so the only way to ship new behaviour is a fresh id. On
+ * creation we also delete older ids so they don't show up in the system
+ * notification settings as duplicates.
+ *
+ * `_v4` deliberately has NO `sound` set on the channel: the native bubble
+ * service (`RiderFloatingService` in the `:location` process) owns audio
+ * playback through a looping `MediaPlayer`. A channel with its own sound
+ * would override `FLAG_INSISTENT` on Android 8+, leaving us with a single
+ * one-shot chime instead of a persistent ring.
+ */
+export const RIDER_NOTIFICATION_CHANNEL_ID = 'rider_orders_ring_v4';
+const LEGACY_RIDER_NOTIFICATION_CHANNEL_IDS = [
+  'rider_orders_ring',
+  'rider_orders_ring_v2',
+  'rider_orders_ring_v3',
+];
 /**
  * Android: res/raw/new_order_ring.wav (sync from assets/sounds/new-order-ring.wav).
  * iOS: HonestEatsRider/new_order_ring.wav in Xcode bundle — name without extension for Notifee.
@@ -39,13 +59,28 @@ export async function ensureNotificationChannel(): Promise<string> {
     return RIDER_NOTIFICATION_CHANNEL_ID;
   }
 
+  // Drop any legacy channels left over from earlier app versions so they
+  // don't surface in system Settings → Notifications as silent duplicates.
+  for (const legacyId of LEGACY_RIDER_NOTIFICATION_CHANNEL_IDS) {
+    try {
+      await notifee.deleteChannel(legacyId);
+    } catch {
+      // Channel didn't exist — fine.
+    }
+  }
+
+  // NOTE: no `sound` here on purpose. The native :location process plays
+  // and loops `new_order_ring` via MediaPlayer; setting a channel sound
+  // would cause Android to fire its own one-shot chime that fights with
+  // (and silences) the looping ring on Android 8+.
   return notifee.createChannel({
     id: RIDER_NOTIFICATION_CHANNEL_ID,
     name: 'Rider Orders',
-    description: 'Order alerts and rider updates',
+    description: 'High-priority alerts when a delivery is offered or confirmed',
     importance: AndroidImportance.HIGH,
-    sound: RIDER_NOTIFICATION_SOUND,
     vibration: true,
+    vibrationPattern: [300, 500, 300, 500],
+    lights: true,
   });
 }
 
@@ -151,8 +186,10 @@ export async function displayNotificationFromRemoteMessage(remoteMessage: any): 
   const channelId = await resolveRiderNotificationChannel(data);
   const isOrderAssigned = data.type === 'order_assigned';
   const isOrderAccepted = data.type === 'order_accepted';
-  // Android: loop sound until the user opens the app (we cancel displayed notifs on AppState active).
-  const useLoopingRiderAlert = isOrderAssigned || isOrderAccepted;
+  // The Notifee notification is a *visual* sticky entry only; persistent
+  // audio is owned by the native :location service (MediaPlayer + Vibrator).
+  // We keep `ongoing` so the rider can't accidentally swipe the offer away.
+  const isPersistentRiderAlert = isOrderAssigned || isOrderAccepted;
   const notificationId = data.orderId
     ? `rider-push-${data.orderId}`
     : `rider-push-${data.type || 'order'}`;
@@ -210,10 +247,13 @@ export async function displayNotificationFromRemoteMessage(remoteMessage: any): 
       largeIcon: RIDER_APP_ICON,
       circularLargeIcon: true,
       color: '#FF6B35',
-      sound: RIDER_NOTIFICATION_SOUND,
+      // No `sound` / `loopSound` here on purpose — the channel has no sound
+      // either. The native bubble service plays the looping ring; setting
+      // a per-notification sound would either be ignored (Android 8+ uses
+      // channel sound only) or fire a one-shot chime that competes with
+      // the MediaPlayer loop.
       importance: AndroidImportance.HIGH,
-      ongoing: useLoopingRiderAlert,
-      loopSound: useLoopingRiderAlert,
+      ongoing: isPersistentRiderAlert,
     },
     ios,
   });
@@ -379,6 +419,20 @@ export function setupNotificationListeners(
   // Foreground notification handler
   const unsubscribeForeground = messaging().onMessage(async (remoteMessage) => {
     console.log('📬 FCM notification received (foreground - rider):', remoteMessage);
+
+    // Kick the native looping ring through the :location process so we get
+    // the same persistent alert behaviour in foreground as we do when killed.
+    // The bubble owns audio/vibration; the channel sound here only chimes
+    // once for the heads-up animation.
+    const data = remoteMessage?.data ?? {};
+    if ((data.type === 'order_assigned' || data.type === 'order_accepted') && data.orderId) {
+      startRiderRideAlert(
+        String(data.orderId),
+        String(data.restaurantName || 'a nearby restaurant'),
+        Number(data.deliveryFee) || 0,
+      );
+    }
+
     await displayNotificationFromRemoteMessage(remoteMessage);
     onNotificationReceived(remoteMessage);
   });
@@ -400,11 +454,15 @@ export function setupNotificationListeners(
     });
 
   const unsubscribeNotifeeForeground = notifee.onForegroundEvent(({ type, detail }) => {
+    const data = (detail.notification?.data ?? {}) as Record<string, string>;
+
     // ACTION_PRESS — Accept / Reject button tapped while app is in foreground
     if (type === EventType.ACTION_PRESS && detail.pressAction?.id !== 'default') {
       const actionId = detail.pressAction!.id;
-      const data = (detail.notification?.data ?? {}) as Record<string, string>;
       console.log(`👆 Notification action pressed (foreground): ${actionId}`, data);
+      // Stop the loop the moment the rider commits — this is parity with the
+      // background path in index.js so the ring never outlives the tap.
+      if (data.orderId) stopRiderRideAlert(String(data.orderId));
       if (onActionPress) {
         onActionPress(actionId, data);
       }
@@ -413,6 +471,10 @@ export function setupNotificationListeners(
 
     if (type !== EventType.PRESS && type !== EventType.ACTION_PRESS) {
       return;
+    }
+
+    if (type === EventType.PRESS && data.orderId) {
+      stopRiderRideAlert(String(data.orderId));
     }
 
     const openedMessage = toOpenedMessage(detail.notification);

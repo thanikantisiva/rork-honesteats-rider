@@ -38,6 +38,10 @@ class APIClient {
     this.baseURL = baseURL;
   }
 
+  getBaseURL() {
+    return this.baseURL;
+  }
+
   private async request<T>(
     endpoint: string,
     options: RequestInit = {}
@@ -137,6 +141,8 @@ export const isMockPhone = (phone: string) => MOCK_PHONE_LAST10.has(normalizeLas
 export const setApiBaseUrlForPhone = (phone: string) => {
   api.setBaseURL(isMockPhone(phone) ? DEV_BASE_URL : PROD_BASE_URL);
 };
+
+export const getApiBaseUrl = () => api.getBaseURL();
 
 const AUTH_API_KEY = 'dev-mobile-key-12345';
 
