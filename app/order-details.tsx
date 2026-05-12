@@ -6,8 +6,9 @@
 import React, { useState, useEffect } from 'react';
 import { StyleSheet, Text, View, ScrollView, TouchableOpacity, Linking, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useLocalSearchParams, Stack } from 'expo-router';
-import { MapPin, Phone, Navigation } from 'lucide-react-native';
+import { useLocalSearchParams, Stack, useRouter } from 'expo-router';
+import { MapPin, Phone, Navigation, ArrowLeft } from 'lucide-react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useOrders } from '@/contexts/OrdersContext';
 import { StatusBadge } from '@/components/StatusBadge';
 import { useThemedAlert } from '@/components/ThemedAlert';
@@ -16,6 +17,8 @@ import { riderTheme } from '@/theme/riderTheme';
 
 export default function OrderDetailsScreen() {
   const params = useLocalSearchParams();
+  const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { orders } = useOrders();
   const { AlertComponent } = useThemedAlert();
   const [order, setOrder] = useState<RiderOrder | null>(null);
@@ -48,19 +51,21 @@ export default function OrderDetailsScreen() {
 
   return (
     <>
-      <Stack.Screen options={{ headerShown: true, title: 'Order Details' }} />
-      <SafeAreaView style={styles.container} edges={['bottom']}>
-        <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-          <View style={styles.orderHeader}>
-            <View style={styles.orderHeaderText}>
-              <Text style={styles.orderLabel}>Order ID</Text>
-              <Text style={styles.orderId} selectable>
-                {order.orderId}
-              </Text>
-            </View>
-            <StatusBadge status={order.status} />
+      <Stack.Screen options={{ headerShown: false }} />
+      <View style={styles.container}>
+        {/* Red Header */}
+        <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
+          <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} activeOpacity={0.85}>
+            <ArrowLeft size={22} color="#FFFFFF" strokeWidth={2.5} />
+          </TouchableOpacity>
+          <View style={styles.headerCenter}>
+            <Text style={styles.headerTitle}>Order Details</Text>
+            <Text style={styles.headerOrderId} numberOfLines={1}>{order.orderId}</Text>
           </View>
+          <StatusBadge status={order.status} />
+        </View>
 
+        <ScrollView style={styles.content} showsVerticalScrollIndicator={false} contentContainerStyle={styles.contentContainer}>
           {(order.paymentMethod || '').toUpperCase() === 'COD' && (
             <View style={styles.codStrip}>
               <Text style={styles.codStripTitle}>Cash on delivery</Text>
@@ -151,7 +156,7 @@ export default function OrderDetailsScreen() {
             </View>
           </View>
         </ScrollView>
-      </SafeAreaView>
+      </View>
 
       <AlertComponent />
     </>
@@ -169,8 +174,45 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: riderTheme.colors.background,
   },
+  header: {
+    backgroundColor: '#E8352A',
+    paddingHorizontal: 16,
+    paddingBottom: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  backBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerCenter: {
+    flex: 1,
+  },
+  headerTitle: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: 'rgba(255,255,255,0.75)',
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+  },
+  headerOrderId: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: 0.2,
+  },
   content: {
     flex: 1,
+  },
+  contentContainer: {
+    paddingBottom: 40,
+    paddingHorizontal: 20,
+    paddingTop: 16,
   },
   orderHeader: {
     backgroundColor: riderTheme.colors.surface,
@@ -180,14 +222,13 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     borderBottomWidth: 1,
     borderBottomColor: riderTheme.colors.borderLight,
-    ...riderTheme.shadow.small,
   },
   orderHeaderText: {
     flex: 1,
     marginRight: 12,
   },
   orderLabel: {
-    fontSize: 12,
+    fontSize: 11,
     color: riderTheme.colors.textMuted,
     fontWeight: '600',
     textTransform: 'uppercase',
@@ -195,14 +236,13 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   orderId: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '800',
     color: riderTheme.colors.textPrimary,
     letterSpacing: 0.2,
     flexShrink: 1,
   },
   section: {
-    paddingHorizontal: 20,
     paddingTop: 20,
   },
   sectionTitle: {
@@ -301,8 +341,7 @@ const styles = StyleSheet.create({
     padding: 14,
     borderWidth: 1,
     borderColor: riderTheme.colors.warning,
-    marginHorizontal: 20,
-    marginTop: 16,
+    marginBottom: 4,
   },
   codStripTitle: {
     fontSize: 12,

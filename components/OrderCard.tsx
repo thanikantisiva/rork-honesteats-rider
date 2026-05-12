@@ -18,7 +18,7 @@ import {
   Dimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { MapPin, Home, Package, IndianRupee, Navigation, CheckCircle, Truck, Lock, ArrowRight, Camera, RotateCcw, QrCode, Banknote, X } from 'lucide-react-native';
+import { MapPin, Home, Package, IndianRupee, Navigation, CheckCircle, Truck, ArrowRight, Camera, RotateCcw, QrCode, Banknote, X } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system';
 import { RiderOrder } from '@/types';
@@ -84,15 +84,15 @@ interface OrderCardProps {
   onPress: () => void;
   onAccept?: () => void;
   onReject?: (reason?: string) => void;
-  onStartPickupProcess?: () => void;
+  onMarkPickedUp?: () => Promise<void> | void;
   onStartDelivery?: () => void;
-  onMarkDelivered?: () => void;
+  onMarkDelivered?: (otp?: string) => void;
   /** Required to record COD (UPI QR / cash) before delivery */
   riderId?: string;
   riderLocation?: { lat: number; lng: number };
 }
 
-export function OrderCard({ order, onPress, onAccept, onReject, onStartPickupProcess, onStartDelivery, onMarkDelivered, riderId, riderLocation }: OrderCardProps) {
+export function OrderCard({ order, onPress, onAccept, onReject, onMarkPickedUp, onStartDelivery, onMarkDelivered, riderId, riderLocation }: OrderCardProps) {
   const isOffer = order.status === 'OFFERED_TO_RIDER';
   const isNewOrder = order.status === 'RIDER_ASSIGNED';
   const isPickedUp = order.status === 'PICKED_UP';
@@ -102,7 +102,6 @@ export function OrderCard({ order, onPress, onAccept, onReject, onStartPickupPro
   const [otpEntry, setOtpEntry] = useState('');
   const [packagePhotoUri, setPackagePhotoUri] = useState<string | null>(null);
   const [isUploadingEvidence, setIsUploadingEvidence] = useState(false);
-  const [hasStartedPickupProcess, setHasStartedPickupProcess] = useState(false);
   // Prevents double-tap on any async action button
   const [isActionLoading, setIsActionLoading] = useState(false);
   const [isConfirmingOtp, setIsConfirmingOtp] = useState(false);
@@ -194,11 +193,11 @@ export function OrderCard({ order, onPress, onAccept, onReject, onStartPickupPro
     };
   }, [riderLocation?.lat, riderLocation?.lng, order.pickupLat, order.pickupLng]);
 
-  const completeDelivery = async () => {
+  const completeDelivery = async (verifiedOtp?: string) => {
     if (!onMarkDelivered) return;
     setIsConfirmingOtp(true);
     try {
-      await onMarkDelivered();
+      await onMarkDelivered(verifiedOtp);
     } finally {
       setIsConfirmingOtp(false);
     }
@@ -327,7 +326,7 @@ export function OrderCard({ order, onPress, onAccept, onReject, onStartPickupPro
     setOtpHelpText(null);
 
     if (!onMarkDelivered) return;
-    await completeDelivery();
+    await completeDelivery(otpEntry);
   };
 
   const takePackagePhoto = async () => {
@@ -347,14 +346,14 @@ export function OrderCard({ order, onPress, onAccept, onReject, onStartPickupPro
   };
 
   const handleMarkPickedUp = async () => {
-    if (!packagePhotoUri || !onAccept) return;
+    if (!packagePhotoUri || !onMarkPickedUp || isUploadingEvidence) return;
     setIsUploadingEvidence(true);
     try {
       const base64 = await FileSystem.readAsStringAsync(packagePhotoUri, {
         encoding: FileSystem.EncodingType.Base64,
       });
       await imageAPI.uploadPackageEvidence(order.orderId, `data:image/jpeg;base64,${base64}`);
-      onAccept();
+      await onMarkPickedUp();
     } catch (error: any) {
       Alert.alert('Upload Failed', error.message || 'Could not upload package photo. Please try again.');
     } finally {
@@ -362,24 +361,40 @@ export function OrderCard({ order, onPress, onAccept, onReject, onStartPickupPro
     }
   };
 
-  // Determine card accent color
-  const getCardStyle = () => {
-    if (isOffer) return styles.cardOffer;
-    if (isNewOrder) return styles.cardNew;
-    if (isPickedUp) return styles.cardPickedUp;
-    if (isOutForDelivery) return styles.cardOutForDelivery;
-    return null;
+  const getBandColor = () => {
+    if (isOffer) return '#E8352A';
+    if (isNewOrder) return '#F59E0B';
+    if (isPickedUp) return '#3B82F6';
+    if (isOutForDelivery) return '#22C55E';
+    return '#9E7A6A';
+  };
+
+  const getBandLabel = () => {
+    if (isOffer) return 'NEW ORDER';
+    if (isNewOrder) return 'ACCEPTED';
+    if (isPickedUp) return 'PICKED UP';
+    if (isOutForDelivery) return 'OUT FOR DELIVERY';
+    if (isCompleted) return 'DELIVERED';
+    return '';
   };
 
   return (
     <>
     <TouchableOpacity
-      style={[styles.card, getCardStyle()]}
+      style={styles.card}
       onPress={isCompleted ? undefined : onPress}
       disabled={isCompleted}
-      activeOpacity={isCompleted ? 1 : 0.85}
+      activeOpacity={isCompleted ? 1 : 0.88}
     >
-      {/* Header with Order ID & Status */}
+      {/* Full-bleed top status band */}
+      <View style={[styles.statusBand, { backgroundColor: getBandColor() }]}>
+        <Text style={styles.bandLabel}>{getBandLabel()}</Text>
+        <StatusBadge status={order.status} />
+      </View>
+
+      {/* Content padding starts here */}
+      <View style={styles.cardBody}>
+      {/* Order ID row */}
       <View style={styles.header}>
         <View style={styles.headerLeft}>
           <Text style={styles.orderLabel}>Order ID</Text>
@@ -387,7 +402,6 @@ export function OrderCard({ order, onPress, onAccept, onReject, onStartPickupPro
             {order.orderId}
           </Text>
         </View>
-        <StatusBadge status={order.status} />
       </View>
 
       {(order.paymentMethod || '').toUpperCase() === 'COD' && (
@@ -474,15 +488,6 @@ export function OrderCard({ order, onPress, onAccept, onReject, onStartPickupPro
         );
       })()}
 
-      {/* Pickup OTP Badge */}
-      {['RIDER_ASSIGNED', 'PICKED_UP'].includes(order.status) && order.pickupOtp && (
-        <View style={styles.otpBadge}>
-          <Lock size={15} color={riderTheme.colors.warning} strokeWidth={2.5} />
-          <Text style={styles.otpLabel}>Pickup OTP:</Text>
-          <Text style={styles.otpValue}>{order.pickupOtp}</Text>
-        </View>
-      )}
-
       {/* Action Buttons */}
       {isOffer && onAccept && onReject && (
         <View style={styles.actionsRow}>
@@ -514,21 +519,9 @@ export function OrderCard({ order, onPress, onAccept, onReject, onStartPickupPro
         </View>
       )}
 
-      {isNewOrder && onAccept && (
+      {isNewOrder && onMarkPickedUp && (
         <View style={styles.pickupEvidenceSection}>
-          {!hasStartedPickupProcess ? (
-            <TouchableOpacity
-              style={styles.primaryAction}
-              onPress={(e) => {
-                e.stopPropagation();
-                setHasStartedPickupProcess(true);
-                onStartPickupProcess?.();
-              }}
-              activeOpacity={0.85}
-            >
-              <Text style={styles.primaryActionText}>Start Delivery Process</Text>
-            </TouchableOpacity>
-          ) : !packagePhotoUri ? (
+          {!packagePhotoUri ? (
             <TouchableOpacity
               style={styles.takePhotoButton}
               onPress={(e) => { e.stopPropagation(); takePackagePhoto(); }}
@@ -555,7 +548,7 @@ export function OrderCard({ order, onPress, onAccept, onReject, onStartPickupPro
               </View>
               <TouchableOpacity
                 style={[styles.primaryAction, isUploadingEvidence && { opacity: 0.6 }]}
-                onPress={(e) => { e.stopPropagation(); handleMarkPickedUp(); }}
+                onPress={(e) => { e.stopPropagation(); void handleMarkPickedUp(); }}
                 disabled={isUploadingEvidence}
                 activeOpacity={0.85}
               >
@@ -618,6 +611,7 @@ export function OrderCard({ order, onPress, onAccept, onReject, onStartPickupPro
         </TouchableOpacity>
       )}
 
+      </View>{/* end cardBody */}
     </TouchableOpacity>
 
       <Modal
@@ -746,56 +740,51 @@ const QR_INNER = QR_FRAME + 220;
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: riderTheme.colors.surface,
-    borderRadius: riderTheme.radius.xl,
-    padding: 14,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
     marginBottom: 14,
-    borderWidth: 1.5,
-    borderColor: riderTheme.colors.borderLight,
-    ...riderTheme.shadow.card,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#F0E8E4',
+    shadowColor: '#1A0C08',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.09,
+    shadowRadius: 10,
+    elevation: 4,
   },
-  cardOffer: {
-    borderColor: riderTheme.colors.info,
-    backgroundColor: riderTheme.colors.infoSoft,
+  // Top colored band
+  statusBand: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
   },
-  cardNew: {
-    borderColor: riderTheme.colors.primary,
-    backgroundColor: riderTheme.colors.surface,
-    borderLeftWidth: 5,
-    borderLeftColor: riderTheme.colors.primary,
+  bandLabel: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: 'rgba(255,255,255,0.92)',
+    letterSpacing: 1.2,
+    textTransform: 'uppercase',
   },
-  cardPickedUp: {
-    borderColor: riderTheme.colors.success,
-    backgroundColor: riderTheme.colors.surface,
-    borderLeftWidth: 5,
-    borderLeftColor: riderTheme.colors.success,
-  },
-  cardOutForDelivery: {
-    borderColor: riderTheme.colors.warning,
-    backgroundColor: riderTheme.colors.surface,
-    borderLeftWidth: 5,
-    borderLeftColor: riderTheme.colors.warning,
+  cardBody: {
+    padding: 12,
   },
   header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 14,
-    paddingBottom: 12,
+    marginBottom: 10,
+    paddingBottom: 10,
     borderBottomWidth: 1,
-    borderBottomColor: riderTheme.colors.borderLight,
+    borderBottomColor: '#F0E8E4',
   },
   headerLeft: {
     flex: 1,
-    marginRight: 10,
     flexDirection: 'column',
-    alignItems: 'flex-start',
     gap: 4,
   },
   codBanner: {
-    marginTop: -6,
-    marginBottom: 12,
-    paddingVertical: 10,
+    marginTop: -4,
+    marginBottom: 10,
+    paddingVertical: 8,
     paddingHorizontal: 12,
     borderRadius: riderTheme.radius.md,
     backgroundColor: riderTheme.colors.warningSoft,
@@ -830,7 +819,7 @@ const styles = StyleSheet.create({
     flexShrink: 1,
   },
   locationsContainer: {
-    marginBottom: 16,
+    marginBottom: 10,
   },
   locationRow: {
     flexDirection: 'row',
@@ -892,16 +881,16 @@ const styles = StyleSheet.create({
   },
   connectorLine: {
     width: 2,
-    height: 20,
+    height: 14,
     backgroundColor: riderTheme.colors.borderLight,
     marginLeft: 19,
-    marginVertical: 4,
+    marginVertical: 2,
   },
   detailsRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 14,
+    marginBottom: 10,
   },
   detailChip: {
     flexDirection: 'row',
@@ -920,23 +909,23 @@ const styles = StyleSheet.create({
   earningsChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    backgroundColor: riderTheme.colors.successSoft,
+    gap: 4,
+    backgroundColor: '#DCFCE7',
     paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: riderTheme.radius.full,
-    borderWidth: 1,
-    borderColor: riderTheme.colors.success,
+    paddingVertical: 7,
+    borderRadius: 999,
+    borderWidth: 1.5,
+    borderColor: '#22C55E',
   },
   earningsText: {
-    fontSize: 14,
-    fontWeight: '800',
-    color: riderTheme.colors.successDark,
+    fontSize: 20,
+    fontWeight: '900',
+    color: '#15803D',
   },
   earningsLabel: {
     fontSize: 10,
-    fontWeight: '600',
-    color: riderTheme.colors.success,
+    fontWeight: '700',
+    color: '#22C55E',
   },
   earningsBreakdownRow: {
     flexDirection: 'row',
@@ -948,46 +937,26 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: riderTheme.colors.textSecondary,
   },
-  otpBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    backgroundColor: riderTheme.colors.warningSoft,
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    borderRadius: riderTheme.radius.md,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: riderTheme.colors.warning,
-  },
-  otpLabel: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: riderTheme.colors.textSecondary,
-  },
-  otpValue: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: riderTheme.colors.warningDark,
-    letterSpacing: 4,
-  },
   markDeliveredButton: {
-    backgroundColor: riderTheme.colors.success,
-    paddingVertical: 14,
-    borderRadius: riderTheme.radius.lg,
+    backgroundColor: '#22C55E',
+    paddingVertical: 13,
+    borderRadius: 999,
     alignItems: 'center',
     justifyContent: 'center',
     flexDirection: 'row',
     gap: 8,
     marginTop: 4,
-    ...riderTheme.shadow.medium,
+    shadowColor: '#22C55E',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 10,
+    elevation: 6,
   },
   markDeliveredButtonText: {
     fontSize: 15,
-    fontWeight: '700',
-    color: riderTheme.colors.textInverse,
-    letterSpacing: 1,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: 0.5,
   },
   modalBackdrop: {
     flex: 1,
@@ -1173,33 +1142,37 @@ const styles = StyleSheet.create({
   },
   rejectButton: {
     flex: 1,
-    backgroundColor: riderTheme.colors.surface,
-    borderWidth: 1.5,
-    borderColor: riderTheme.colors.danger,
-    paddingVertical: 12,
-    borderRadius: riderTheme.radius.lg,
+    backgroundColor: '#FFF5F5',
+    borderWidth: 2,
+    borderColor: '#E8352A',
+    paddingVertical: 13,
+    borderRadius: 999,
     alignItems: 'center',
   },
   rejectText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: riderTheme.colors.danger,
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#E8352A',
   },
   acceptButton: {
-    flex: 1.5,
-    backgroundColor: riderTheme.colors.primary,
-    paddingVertical: 12,
-    borderRadius: riderTheme.radius.lg,
+    flex: 1.8,
+    backgroundColor: '#22C55E',
+    paddingVertical: 13,
+    borderRadius: 999,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    ...riderTheme.shadow.medium,
+    shadowColor: '#22C55E',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 10,
+    elevation: 6,
   },
   acceptText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: riderTheme.colors.textInverse,
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#FFFFFF',
   },
   pickupEvidenceSection: {
     gap: 10,
@@ -1257,19 +1230,23 @@ const styles = StyleSheet.create({
     color: riderTheme.colors.warning,
   },
   primaryAction: {
-    backgroundColor: riderTheme.colors.primary,
-    paddingVertical: 14,
-    borderRadius: riderTheme.radius.lg,
+    backgroundColor: '#E8352A',
+    paddingVertical: 13,
+    borderRadius: 999,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 10,
-    ...riderTheme.shadow.medium,
+    shadowColor: '#E8352A',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 10,
+    elevation: 6,
   },
   primaryActionText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: riderTheme.colors.textInverse,
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#FFFFFF',
     flex: 1,
     textAlign: 'center',
   },

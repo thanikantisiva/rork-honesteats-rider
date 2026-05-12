@@ -21,6 +21,7 @@ import {
   Linking,
   BackHandler,
   ActivityIndicator,
+  AppState,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Stack, useRouter } from 'expo-router';
@@ -37,6 +38,12 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useLocation } from '@/contexts/LocationContext';
 import { useThemedAlert } from '@/components/ThemedAlert';
 import { riderTheme } from '@/theme/riderTheme';
+import {
+  formatMandatoryPermissionList,
+  getMissingMandatoryPermissions,
+  MandatoryPermissionKey,
+  requestMandatoryPermissions,
+} from '@/services/mandatory-permissions';
 
 const POLICY_URL = 'https://yumdude.com/rider-policy';
 
@@ -80,6 +87,12 @@ export default function DisclosureScreen() {
   const { showAlert, AlertComponent } = useThemedAlert();
   const [isAccepting, setIsAccepting] = React.useState(false);
   const [isDeclining, setIsDeclining] = React.useState(false);
+  const [missingPermissions, setMissingPermissions] = React.useState<MandatoryPermissionKey[]>([]);
+
+  const refreshMissingPermissions = React.useCallback(async () => {
+    const missing = await getMissingMandatoryPermissions();
+    setMissingPermissions(missing);
+  }, []);
 
   // Block hardware back button — navigating away must not count as consent.
   useEffect(() => {
@@ -94,10 +107,31 @@ export default function DisclosureScreen() {
     }
   }, [isLoggedIn, router]);
 
+  useEffect(() => {
+    void refreshMissingPermissions();
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') {
+        void refreshMissingPermissions();
+      }
+    });
+    return () => sub.remove();
+  }, [refreshMissingPermissions]);
+
   const handleAccept = async () => {
     if (isAccepting) return;
     setIsAccepting(true);
     try {
+      const result = await requestMandatoryPermissions();
+      await refreshMissingPermissions();
+      if (!result.granted) {
+        showAlert(
+          'Permissions required',
+          `You must grant all required permissions to use YumDude Rider. Missing: ${formatMandatoryPermissionList(result.missing)}.`,
+          undefined,
+          'warning',
+        );
+        return;
+      }
       await acceptDisclosure();
       router.replace('/(tabs)');
     } catch (err) {
@@ -168,8 +202,18 @@ export default function DisclosureScreen() {
           <Text style={styles.subtitle}>
             YumDude Rider needs to collect a few types of data so you can receive
             and complete deliveries. Please review how your data is used before
-            continuing.
+            continuing. All listed permissions are mandatory and the app will not
+            proceed until every one of them is granted.
           </Text>
+
+          {missingPermissions.length > 0 ? (
+            <View style={styles.mandatoryBanner}>
+              <Text style={styles.mandatoryBannerTitle}>Required before continuing</Text>
+              <Text style={styles.mandatoryBannerText}>
+                Missing permissions: {formatMandatoryPermissionList(missingPermissions)}.
+              </Text>
+            </View>
+          ) : null}
 
           <View style={styles.sectionsCard}>
             {DATA_SECTIONS.map((section, idx) => {
@@ -217,8 +261,8 @@ export default function DisclosureScreen() {
           <Text style={styles.footerNote}>
             By tapping "I Agree and Continue" you confirm that you have read and
             understood how YumDude Rider accesses, collects, uses, and shares the
-            data above, and you give consent for us to do so. You can withdraw
-            consent at any time by logging out or uninstalling the app.
+            data above, and you give consent for us to do so. You also confirm
+            that all required permissions will be granted before using the app.
           </Text>
         </ScrollView>
 
@@ -299,6 +343,28 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: riderTheme.colors.borderLight,
     ...riderTheme.shadow.card,
+  },
+  mandatoryBanner: {
+    marginBottom: 16,
+    backgroundColor: riderTheme.colors.warningSoft,
+    borderRadius: riderTheme.radius.lg,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: riderTheme.colors.warning,
+  },
+  mandatoryBannerTitle: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: riderTheme.colors.warningDark,
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+    marginBottom: 4,
+  },
+  mandatoryBannerText: {
+    fontSize: 12,
+    lineHeight: 18,
+    color: riderTheme.colors.textPrimary,
+    fontWeight: '600',
   },
   sectionRow: {
     flexDirection: 'row',

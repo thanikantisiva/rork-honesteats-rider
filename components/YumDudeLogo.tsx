@@ -9,19 +9,19 @@ interface YumDudeLogoProps {
 
 export function YumDudeLogo({
   size = 72,
-  color = '#FF6B35',
-  accent = '#8B5CF6',
+  color = '#E8352A',
+  accent = '#FFC52E',
 }: YumDudeLogoProps) {
   return (
     <Svg width={size} height={size} viewBox="0 0 72 72" fill="none">
       <Defs>
         <LinearGradient id="primary-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
-          <Stop offset="0%" stopColor="#FF6B35" />
-          <Stop offset="100%" stopColor="#FF8254" />
+          <Stop offset="0%" stopColor="#E8352A" />
+          <Stop offset="100%" stopColor="#FF5048" />
         </LinearGradient>
         <LinearGradient id="accent-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
-          <Stop offset="0%" stopColor="#8B5CF6" />
-          <Stop offset="100%" stopColor="#A78BFA" />
+          <Stop offset="0%" stopColor="#FFC52E" />
+          <Stop offset="100%" stopColor="#FFD970" />
         </LinearGradient>
       </Defs>
       

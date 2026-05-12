@@ -5,6 +5,10 @@ type RiderFloatingServiceModule = {
   stop: () => void;
   startRideAlert: (orderId: string, restaurantName: string, deliveryFee: number) => void;
   stopRideAlert: (orderId: string) => void;
+  muteRideAlert: (orderId: string) => void;
+  muteAllAlerts: () => void;
+  hasOverlayPermission: () => Promise<boolean>;
+  requestOverlayPermission: () => Promise<boolean>;
 };
 
 const nativeModule = NativeModules.RiderFloatingService as RiderFloatingServiceModule | undefined;
@@ -67,5 +71,64 @@ export function stopRiderRideAlert(orderId: string | null = null) {
     nativeModule.stopRideAlert(orderId ?? '');
   } catch {
     // Same as startRideAlert — fail-safe no-op when the service isn't running.
+  }
+}
+
+/**
+ * Mutes a specific offered order in the native :location service so its poll
+ * loop does not restart the ring on the next OFFERED_TO_RIDER refresh.
+ * Future/new orders are unaffected.
+ */
+export function muteRiderRideAlert(orderId: string) {
+  if (Platform.OS !== 'android' || !nativeModule || !orderId) {
+    return;
+  }
+
+  try {
+    nativeModule.muteRideAlert(orderId);
+  } catch {
+    // Fail-safe no-op if the service is not currently running.
+  }
+}
+
+/**
+ * Stops ALL currently looping ride alerts in the native :location service
+ * (both OFFERED_TO_RIDER and force-assigned RIDER_ASSIGNED) and mutes each
+ * so the poll loop does not restart them. Use for the global "mute" button.
+ */
+export function muteAllRiderAlerts() {
+  if (Platform.OS !== 'android' || !nativeModule) {
+    return;
+  }
+
+  try {
+    nativeModule.muteAllAlerts();
+  } catch {
+    // Fail-safe no-op if the service is not currently running.
+  }
+}
+
+/** Returns true if "Display over other apps" permission is already granted. */
+export async function hasRiderOverlayPermission(): Promise<boolean> {
+  if (Platform.OS !== 'android' || !nativeModule) return true;
+  try {
+    return await nativeModule.hasOverlayPermission();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Opens the Android "Display over other apps" Settings page.
+ * Call this before starting the floating service if the permission isn't
+ * granted. Returns immediately — the user grants permission in Settings and
+ * your AppState 'active' listener should re-check and start the service.
+ */
+export async function requestRiderOverlayPermission(): Promise<void> {
+  if (Platform.OS !== 'android' || !nativeModule) return;
+  try {
+    await nativeModule.requestOverlayPermission();
+  } catch (e) {
+    console.warn('⚠️ requestOverlayPermission failed:', e);
   }
 }

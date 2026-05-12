@@ -18,7 +18,7 @@ import * as Location from 'expo-location';
 import * as TaskManager from 'expo-task-manager';
 import { getApiBaseUrl, riderStatusAPI } from '@/lib/api';
 import { syncRiderFcmTokenToBackend } from '@/services/firebase-messaging';
-import { startRiderFloatingService, stopRiderFloatingService } from '@/services/rider-floating-service';
+import { startRiderFloatingService, stopRiderFloatingService, hasRiderOverlayPermission, requestRiderOverlayPermission } from '@/services/rider-floating-service';
 import { useAuth } from './AuthContext';
 import { BACKGROUND_LOCATION_TASK } from '@/tasks/background-location';
 
@@ -101,8 +101,30 @@ export function LocationProvider({ children }: { children: ReactNode }) {
         if (data.isActive) {
           setIsOnline(true);
           void syncRiderFcmTokenToBackend(rider.phone);
-          // Also resume tracking if rider was left online
-          void startTracking();
+          void startNativeFloatingTracking(rider.riderId);
+          // Auto-resume tracking ONLY if permission is already granted.
+          // Do NOT call requestForegroundPermissionsAsync() here — it can fail
+          // silently on startup before any user gesture, and if permanently
+          // denied it would surface as a confusing error overlay.
+          // The rider can toggle offline→online to trigger the dialog manually.
+          const { granted } = await Location.getForegroundPermissionsAsync();
+          if (granted) {
+            void startTracking();
+          } else {
+            console.log('⏸️ Auto-resume: skipping tracking — location permission not yet granted');
+          }
+        } else {
+          // Check if rider chose "Go Online" on the sign-in screen.
+          const goOnlineFlag = await AsyncStorage.getItem('@rider_go_online_on_login');
+          if (goOnlineFlag === 'true') {
+            await AsyncStorage.removeItem('@rider_go_online_on_login');
+            console.log('🟢 Auto-going online (rider preference set on sign-in)');
+            try {
+              await toggleOnline();
+            } catch (err) {
+              console.warn('⚠️ Auto-online on login failed:', err);
+            }
+          }
         }
       } catch (err) {
         console.warn('⚠️ Could not fetch rider status on mount:', err);
@@ -175,9 +197,18 @@ export function LocationProvider({ children }: { children: ReactNode }) {
 
     console.log('📍 Starting OS-level location tracking...');
 
-    const { status: fgStatus } = await Location.requestForegroundPermissionsAsync();
+    // Check existing state first — avoid showing the dialog redundantly
+    // (e.g. when called right after toggleOnline which already requested it).
+    const { status: existingFgStatus } = await Location.getForegroundPermissionsAsync();
+    let fgStatus = existingFgStatus;
     if (fgStatus !== 'granted') {
-      console.error('❌ Foreground location permission denied');
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      fgStatus = status;
+    }
+    if (fgStatus !== 'granted') {
+      // This is a handled case — not a crash. The rider must grant permission
+      // via device settings. Log as warn, not error.
+      console.warn('⚠️ Location permission not granted — tracking skipped. Rider should enable it in device settings.');
       return;
     }
 
@@ -279,6 +310,15 @@ export function LocationProvider({ children }: { children: ReactNode }) {
         const { status } = await Location.requestForegroundPermissionsAsync();
         if (status !== 'granted') throw new Error('Location permission not granted');
 
+        // Request "Display over other apps" for the floating bubble.
+        // This opens the Settings page; the user grants it and returns.
+        // We don't block on this — the service starts regardless and will
+        // show the bubble on the next online toggle if permission is then granted.
+        const hasOverlay = await hasRiderOverlayPermission();
+        if (!hasOverlay) {
+          await requestRiderOverlayPermission();
+        }
+
         await syncRiderFcmTokenToBackend(rider.phone);
 
         const snapshot = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
@@ -288,6 +328,7 @@ export function LocationProvider({ children }: { children: ReactNode }) {
         await riderStatusAPI.toggleStatus(rider.riderId, true, latitude, longitude);
         setCurrentLocation({ lat: latitude, lng: longitude });
         setIsOnline(true);
+        await startNativeFloatingTracking(rider.riderId);
         await startTracking();
         console.log('✅ Rider is now ONLINE');
       } else {

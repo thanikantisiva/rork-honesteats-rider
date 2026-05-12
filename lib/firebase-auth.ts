@@ -130,6 +130,7 @@ export async function verifyFirebaseOTP(
     
     // Verify the OTP code
     const result = await confirmation.confirm(code);
+    if (!result) throw new Error('Verification returned null result');
     
     console.log('✅ OTP verified successfully');
     

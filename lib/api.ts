@@ -389,4 +389,7 @@ export const riderEarningsAPI = {
 
   getHistory: (riderId: string, startDate: string, endDate: string) =>
     api.get<any>(`/api/v1/riders/${riderId}/earnings/history?startDate=${startDate}&endDate=${endDate}`),
+
+  getBonusProgress: (riderId: string) =>
+    api.get<any>(`/api/v1/riders/${riderId}/bonus-progress`),
 };

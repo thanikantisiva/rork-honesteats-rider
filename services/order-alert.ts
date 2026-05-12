@@ -1,18 +1,26 @@
 import { Audio, InterruptionModeAndroid, InterruptionModeIOS } from 'expo-av';
 import { AppState, Vibration } from 'react-native';
 
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === 'object' && error !== null && 'message' in error)
+    return String((error as { message: unknown }).message);
+  return String(error);
+}
+
 function isAudioFocusBackgroundError(error: unknown): boolean {
-  const msg =
-    error instanceof Error
-      ? error.message
-      : typeof error === 'object' && error !== null && 'message' in error
-        ? String((error as { message: unknown }).message)
-        : String(error);
+  const msg = getErrorMessage(error);
   return (
     msg.includes('AudioFocusNotAcquired') ||
     msg.includes('in the background') ||
     msg.includes('audio focus could not be acquired')
   );
+}
+
+/** Android destroys the native player when the app backgrounds — treat as already-gone. */
+function isPlayerGoneError(error: unknown): boolean {
+  const msg = getErrorMessage(error);
+  return msg.includes('Player does not exist') || msg.includes('player does not exist');
 }
 
 let ringSound: Audio.Sound | null = null;
@@ -109,6 +117,7 @@ export async function stopNewOrderAlert(): Promise<void> {
     await ringSound.setPositionAsync(0).catch(() => undefined);
     await ringSound.setIsLoopingAsync(false).catch(() => undefined);
   } catch (error) {
+    if (isPlayerGoneError(error) || isAudioFocusBackgroundError(error)) return;
     console.error('Failed to stop new order alert:', error);
   } finally {
     isAlertPlaying = false;
@@ -122,12 +131,17 @@ export async function unloadNewOrderAlert(): Promise<void> {
     return;
   }
 
+  // Null the global first — prevents any concurrent call from double-unloading
+  const soundToUnload = ringSound;
+  ringSound = null;
+  isAlertPlaying = false;
+
   try {
-    await ringSound.unloadAsync();
+    await soundToUnload.unloadAsync();
   } catch (error) {
+    // "Player does not exist" means Android already released the native player
+    // (common after backgrounding). Treat as success — the player is gone.
+    if (isPlayerGoneError(error)) return;
     console.error('Failed to unload order alert sound:', error);
-  } finally {
-    ringSound = null;
-    isAlertPlaying = false;
   }
 }

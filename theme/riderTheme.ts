@@ -1,58 +1,58 @@
 export const riderTheme = {
   colors: {
-    // Vibrant Orange & Purple - Premium Food Theme
-    background: '#FFFFFF',
+    // YumDude Brand — Warm Cream × Signature Red × Golden Yellow
+    background: '#FFFDF7',           // Warm cream (matches customer & restaurant apps)
     surface: '#FFFFFF',
-    surfaceElevated: '#FEFEFE',
-    surfaceMuted: '#F8F9FA',
-    border: '#E9ECEF',
-    borderLight: '#F1F3F5',
-    
-    // Text
-    textPrimary: '#2D1B0E',
-    textSecondary: '#6B4423',
-    textMuted: '#A67C52',
+    surfaceElevated: '#FFFFFF',
+    surfaceMuted: '#F8F3EF',         // Warm muted cream
+    border: '#E8DDD8',
+    borderLight: '#F1EAE6',
+
+    // Text — warm dark browns
+    textPrimary: '#1A0C08',
+    textSecondary: '#5C3D2E',
+    textMuted: '#9E7A6A',
     textInverse: '#FFFFFF',
-    
-    // Brand Colors
-    primary: '#FF6B35',        // Electric Orange
-    primaryDark: '#E85A28',
-    primaryLight: '#FF8254',
-    primarySoft: '#FFE8DF',
-    primaryGradientStart: '#FF6B35',
-    primaryGradientEnd: '#FF8254',
-    
-    // Accent
-    accent: '#8B5CF6',         // Royal Purple
-    accentDark: '#7C3AED',
-    accentSoft: '#EDE9FE',
-    
+
+    // YumDude Red — primary brand
+    primary: '#E8352A',
+    primaryDark: '#C42820',
+    primaryLight: '#FF5048',
+    primarySoft: '#FCECEA',
+    primaryGradientStart: '#E8352A',
+    primaryGradientEnd: '#FF5048',
+
+    // YumDude Yellow — accent / highlight
+    accent: '#FFC52E',
+    accentDark: '#E6A800',
+    accentSoft: '#FFF8E0',
+
     // Status Colors
-    success: '#10B981',        // Emerald
-    successSoft: '#D1FAE5',
-    successDark: '#059669',
-    
-    warning: '#FBBF24',        // Bright Amber
+    success: '#22C55E',
+    successSoft: '#DCFCE7',
+    successDark: '#16A34A',
+
+    warning: '#F59E0B',
     warningSoft: '#FEF3C7',
-    warningDark: '#F59E0B',
-    
-    danger: '#EF4444',         // Red
+    warningDark: '#D97706',
+
+    danger: '#EF4444',
     dangerSoft: '#FEE2E2',
     dangerDark: '#DC2626',
-    
-    info: '#8B5CF6',           // Purple
-    infoSoft: '#EDE9FE',
-    infoDark: '#7C3AED',
-    
+
+    info: '#3B82F6',
+    infoSoft: '#DBEAFE',
+    infoDark: '#2563EB',
+
     // Special
-    overlay: 'rgba(15, 23, 42, 0.5)',
-    overlayLight: 'rgba(15, 23, 42, 0.25)',
-    overlayDark: 'rgba(15, 23, 42, 0.75)',
-    
-    // Gradients
-    gradientPrimary: ['#FF6B35', '#FF8254'],
-    gradientAccent: ['#8B5CF6', '#A78BFA'],
-    gradientSuccess: ['#10B981', '#34D399'],
+    overlay: 'rgba(26, 12, 8, 0.55)',
+    overlayLight: 'rgba(26, 12, 8, 0.25)',
+    overlayDark: 'rgba(26, 12, 8, 0.80)',
+
+    // Gradients (reference values — implemented with stacked views)
+    gradientPrimary: ['#E8352A', '#FF5048'] as string[],
+    gradientAccent: ['#FFC52E', '#FFD970'] as string[],
+    gradientSuccess: ['#22C55E', '#4ADE80'] as string[],
   },
   spacing: {
     xs: 4,
@@ -74,8 +74,8 @@ export const riderTheme = {
     full: 999,
   },
   typography: {
-    h1: 26,
-    h2: 22,
+    h1: 30,
+    h2: 24,
     h3: 20,
     h4: 18,
     h5: 16,
@@ -90,38 +90,46 @@ export const riderTheme = {
     semibold: '600' as any,
     bold: '700' as any,
     extrabold: '800' as any,
+    black: '900' as any,
   },
   shadow: {
     small: {
-      shadowColor: '#0F172A',
-      shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.05,
+      shadowColor: '#1A0C08',
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.06,
       shadowRadius: 4,
-      elevation: 1,
+      elevation: 2,
     },
     medium: {
-      shadowColor: '#0F172A',
-      shadowOffset: { width: 0, height: 4 },
-      shadowOpacity: 0.08,
-      shadowRadius: 8,
-      elevation: 3,
-    },
-    large: {
-      shadowColor: '#0F172A',
-      shadowOffset: { width: 0, height: 8 },
-      shadowOpacity: 0.12,
-      shadowRadius: 16,
-      elevation: 5,
-    },
-    card: {
-      shadowColor: '#0F172A',
+      shadowColor: '#1A0C08',
       shadowOffset: { width: 0, height: 4 },
       shadowOpacity: 0.08,
       shadowRadius: 12,
-      elevation: 3,
+      elevation: 4,
+    },
+    large: {
+      shadowColor: '#1A0C08',
+      shadowOffset: { width: 0, height: 8 },
+      shadowOpacity: 0.12,
+      shadowRadius: 20,
+      elevation: 8,
+    },
+    card: {
+      shadowColor: '#1A0C08',
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.08,
+      shadowRadius: 12,
+      elevation: 4,
+    },
+    primary: {
+      shadowColor: '#E8352A',
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.35,
+      shadowRadius: 12,
+      elevation: 6,
     },
     soft: {
-      shadowColor: '#0F172A',
+      shadowColor: '#1A0C08',
       shadowOffset: { width: 0, height: 2 },
       shadowOpacity: 0.06,
       shadowRadius: 6,

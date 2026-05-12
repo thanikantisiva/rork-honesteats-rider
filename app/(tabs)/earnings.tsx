@@ -1,9 +1,9 @@
-/**
- * Earnings Screen
- * Modern dashboard showing rider earnings and delivery history
+﻿/**
+ * Earnings Screen — Full redesign
+ * Dark hero with massive earnings number, compact per-delivery rows below
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   StyleSheet,
   Text,
@@ -12,281 +12,500 @@ import {
   TouchableOpacity,
   RefreshControl,
   ActivityIndicator,
+  Dimensions,
 } from 'react-native';
 import { Stack } from 'expo-router';
-import { IndianRupee, TrendingUp, Package, Clock, Calendar, CheckCircle2, ChevronDown, Award } from 'lucide-react-native';
+import { IndianRupee, Package, Clock, TrendingUp, Award, CheckCircle2, Calendar, ChevronLeft, ChevronRight, CalendarRange } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '@/contexts/AuthContext';
 import { riderEarningsAPI } from '@/lib/api';
-import { EarningsSummary } from '@/types';
+import { Earnings, EarningsSummary } from '@/types';
 import { riderTheme } from '@/theme/riderTheme';
 
-type Period = 'today' | 'week' | 'month';
+type Mode = 'today' | '7d' | '30d' | 'custom';
 type BreakdownTab = 'unsettled' | 'settled';
 
-const FILTER_OPTIONS: { value: Period; label: string }[] = [
-  { value: 'today', label: 'Today' },
-  { value: 'week', label: 'Last 7 Days' },
-  { value: 'month', label: 'Last 30 Days' },
-];
+const SCREEN_W = Dimensions.get('window').width;
+
+const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+const DAYS = ['Su','Mo','Tu','We','Th','Fr','Sa'];
+
+function toISO(d: Date) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${dd}`;
+}
+
+function sameDay(a: Date, b: Date) {
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+}
+
+function isBetween(d: Date, start: Date, end: Date) {
+  const t = d.getTime();
+  return t > start.getTime() && t < end.getTime();
+}
+
+function formatDisplay(d: Date) {
+  return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+function stripTime(d: Date) {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+}
+
+function CalendarGrid({
+  calMonth, today, rangeStart, rangeEnd, pickingEnd, onDayPress,
+}: {
+  calMonth: Date; today: Date;
+  rangeStart: Date; rangeEnd: Date;
+  pickingEnd: boolean;
+  onDayPress: (d: Date) => void;
+}) {
+  const year = calMonth.getFullYear();
+  const month = calMonth.getMonth();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const firstDow = new Date(year, month, 1).getDay(); // 0=Sun
+
+  // Build week rows
+  const cells: (Date | null)[] = [
+    ...Array(firstDow).fill(null),
+    ...Array.from({ length: daysInMonth }, (_, i) => new Date(year, month, i + 1)),
+  ];
+  const weeks: (Date | null)[][] = [];
+  for (let i = 0; i < cells.length; i += 7) {
+    weeks.push(cells.slice(i, i + 7).concat(Array(7 - cells.slice(i, i + 7).length).fill(null)));
+  }
+
+  return (
+    <View>
+      {weeks.map((week, wi) => (
+        <View key={wi} style={calGridStyles.row}>
+          {week.map((day, di) => {
+            if (!day) return <View key={di} style={calGridStyles.cell} />;
+            const isStart = sameDay(day, rangeStart);
+            const isEnd = !pickingEnd && sameDay(day, rangeEnd);
+            const inRange = !pickingEnd && isBetween(day, rangeStart, rangeEnd);
+            const isFuture = day.getTime() > today.getTime();
+            const isFirstOfRow = di === 0 || week[di - 1] === null;
+            const isLastOfRow = di === 6 || week[di + 1] === null;
+            const isRangeStart = inRange && isFirstOfRow;
+            const isRangeEnd = inRange && isLastOfRow;
+
+            return (
+              <TouchableOpacity
+                key={di}
+                style={[
+                  calGridStyles.cell,
+                  inRange && calGridStyles.cellInRange,
+                  isRangeStart && calGridStyles.cellInRangeStart,
+                  isRangeEnd && calGridStyles.cellInRangeEnd,
+                ]}
+                onPress={() => !isFuture && onDayPress(day)}
+                activeOpacity={isFuture ? 1 : 0.7}
+                disabled={isFuture}
+              >
+                <View style={[
+                  calGridStyles.inner,
+                  (isStart || isEnd) && calGridStyles.innerSelected,
+                  isFuture && calGridStyles.innerFuture,
+                ]}>
+                  <Text style={[
+                    calGridStyles.dayText,
+                    (isStart || isEnd) && calGridStyles.dayTextSelected,
+                    inRange && !isStart && !isEnd && calGridStyles.dayTextInRange,
+                    isFuture && calGridStyles.dayTextFuture,
+                  ]}>
+                    {day.getDate()}
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      ))}
+    </View>
+  );
+}
+
+const calGridStyles = StyleSheet.create({
+  row: { flexDirection: 'row', marginBottom: 2 },
+  cell: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 1 },
+  cellInRange: { backgroundColor: '#FCECEA' },
+  cellInRangeStart: { borderTopLeftRadius: 999, borderBottomLeftRadius: 999 },
+  cellInRangeEnd: { borderTopRightRadius: 999, borderBottomRightRadius: 999 },
+  inner: {
+    width: 34, height: 34, borderRadius: 17,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  innerSelected: { backgroundColor: '#E8352A' },
+  innerFuture: { opacity: 0.3 },
+  dayText: { fontSize: 13, fontWeight: '600', color: '#1A0C08' },
+  dayTextSelected: { color: '#FFFFFF', fontWeight: '800' },
+  dayTextInRange: { color: '#C42820', fontWeight: '700' },
+  dayTextFuture: { color: '#9E7A6A' },
+});
 
 export default function EarningsScreen() {
   const insets = useSafeAreaInsets();
   const { rider } = useAuth();
-  const [selectedPeriod, setSelectedPeriod] = useState<Period>('today');
+  const [mode, setMode] = useState<Mode>('today');
   const [selectedBreakdownTab, setSelectedBreakdownTab] = useState<BreakdownTab>('unsettled');
   const [earnings, setEarnings] = useState<EarningsSummary | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [isFilterOpen, setIsFilterOpen] = useState(false);
 
-  useEffect(() => {
-    if (rider) {
-      fetchEarnings();
-    }
-  }, [rider, selectedPeriod]);
+  // date-range state
+  const today = stripTime(new Date());
+  const [showCalendar, setShowCalendar] = useState(false);
+  const [calMonth, setCalMonth] = useState(new Date(today.getFullYear(), today.getMonth(), 1));
+  const [rangeStart, setRangeStart] = useState<Date>(today);
+  const [rangeEnd, setRangeEnd] = useState<Date>(today);
+  const [pickingEnd, setPickingEnd] = useState(false); // false=picking start, true=picking end
 
-  const fetchEarnings = async () => {
+  const getPresetDates = useCallback((m: Mode): { start: Date; end: Date } => {
+    const t = stripTime(new Date());
+    if (m === 'today') return { start: t, end: t };
+    if (m === '7d') return { start: new Date(t.getFullYear(), t.getMonth(), t.getDate() - 6), end: t };
+    if (m === '30d') return { start: new Date(t.getFullYear(), t.getMonth(), t.getDate() - 29), end: t };
+    return { start: rangeStart, end: rangeEnd };
+  }, [rangeStart, rangeEnd]);
+
+  const fetchEarnings = useCallback(async (m?: Mode, start?: Date, end?: Date) => {
     if (!rider) return;
-
+    const activeMode = m ?? mode;
     setIsLoading(true);
     try {
-      const data = await riderEarningsAPI.getEarnings(rider.riderId, selectedPeriod);
-      setEarnings(data);
-    } catch (error) {
-      console.error('Failed to fetch earnings:', error);
+      if (activeMode === 'custom') {
+        const s = start ?? rangeStart;
+        const e = end ?? rangeEnd;
+        const raw = await riderEarningsAPI.getHistory(rider.riderId, toISO(s), toISO(e));
+        // normalize: history API uses `history` key instead of `dailyBreakdown`
+        setEarnings({ ...raw, dailyBreakdown: raw.history ?? raw.dailyBreakdown ?? [] });
+      } else {
+        const periodMap: Record<Mode, 'today' | 'week' | 'month'> = { today: 'today', '7d': 'week', '30d': 'month', custom: 'today' };
+        const data = await riderEarningsAPI.getEarnings(rider.riderId, periodMap[activeMode]);
+        setEarnings(data);
+      }
+    } catch (e) {
+      console.error('Failed to fetch earnings:', e);
     } finally {
       setIsLoading(false);
     }
+  }, [rider, mode, rangeStart, rangeEnd]);
+
+  useEffect(() => {
+    if (rider) fetchEarnings();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rider, mode]);
+
+  const handlePreset = (m: Mode) => {
+    setMode(m);
+    setShowCalendar(false);
   };
 
-  const selectedFilterLabel =
-    FILTER_OPTIONS.find((option) => option.value === selectedPeriod)?.label || 'Today';
+  const handleCalendarDayPress = (day: Date) => {
+    if (!pickingEnd) {
+      setRangeStart(day);
+      setRangeEnd(day);
+      setPickingEnd(true);
+    } else {
+      if (day.getTime() < rangeStart.getTime()) {
+        // tapped before start — reset
+        setRangeStart(day);
+        setRangeEnd(day);
+        setPickingEnd(true);
+      } else {
+        setRangeEnd(day);
+        setPickingEnd(false);
+      }
+    }
+  };
 
-  const getDisplayDate = (value?: string) => (value ? value.split('#')[0] : '');
-  const getDisplayOrderId = (value?: string, orderId?: string | null) =>
-    orderId || (value?.includes('#') ? value.split('#')[1] : '');
-  const unsettledBreakdown = earnings?.dailyBreakdown?.filter((day) => !day.settled) || [];
-  const settledBreakdown = earnings?.dailyBreakdown?.filter((day) => day.settled) || [];
-  const visibleBreakdown =
-    selectedBreakdownTab === 'unsettled' ? unsettledBreakdown : settledBreakdown;
+  const handleApplyRange = () => {
+    setMode('custom');
+    setShowCalendar(false);
+    fetchEarnings('custom', rangeStart, rangeEnd);
+  };
+
+  const prevMonth = () => setCalMonth(new Date(calMonth.getFullYear(), calMonth.getMonth() - 1, 1));
+  const nextMonth = () => {
+    const next = new Date(calMonth.getFullYear(), calMonth.getMonth() + 1, 1);
+    if (next <= today) setCalMonth(next);
+  };
+
+  const rangeLabel = mode === 'custom'
+    ? `${formatDisplay(rangeStart)} → ${formatDisplay(rangeEnd)}`
+    : mode === 'today' ? 'Today'
+    : mode === '7d' ? 'Last 7 Days'
+    : 'Last 30 Days';
+
+  const getDisplayDate = (v?: string) => (v ? v.split('#')[0] : '');
+  const getDisplayOrderId = (v?: string, orderId?: string | null) =>
+    orderId || (v?.includes('#') ? v.split('#')[1] : '');
+  const isBonusEntry = (entry: Earnings) => entry.entryType === 'MILESTONE_BONUS';
+
+  const unsettled = earnings?.dailyBreakdown?.filter((d) => !d.settled) ?? [];
+  const settled = earnings?.dailyBreakdown?.filter((d) => d.settled) ?? [];
+  const rows = selectedBreakdownTab === 'unsettled' ? unsettled : settled;
 
   return (
     <>
       <Stack.Screen options={{ headerShown: false }} />
-      <View style={styles.container}>
-        {/* Header */}
-        <View style={[styles.header, { paddingTop: insets.top + 16 }]}>
-          <View>
-            <Text style={styles.headerTitle}>Earnings</Text>
-            <Text style={styles.headerSubtitle}>Track your delivery income</Text>
+      <View style={styles.root}>
+
+        {/* ── DARK HERO ── */}
+        <View style={[styles.hero, { paddingTop: insets.top + 12 }]}>
+          <Text style={styles.heroLabel}>Total Earnings</Text>
+          {isLoading && !earnings ? (
+            <ActivityIndicator size="large" color="#FFC52E" style={{ marginVertical: 16 }} />
+          ) : (
+            <Text style={styles.heroAmount}>
+              ₹{((earnings?.totalEarnings) ?? 0).toFixed(2)}
+            </Text>
+          )}
+
+          {/* Mini stats */}
+          <View style={styles.miniStats}>
+            <View style={styles.miniStat}>
+              <Package size={13} color="rgba(255,255,255,0.5)" strokeWidth={2} />
+              <Text style={styles.miniStatVal}>{earnings?.totalDeliveries ?? 0}</Text>
+              <Text style={styles.miniStatLbl}>Deliveries</Text>
+            </View>
+            <View style={styles.miniDivider} />
+            <View style={styles.miniStat}>
+              <TrendingUp size={13} color="rgba(255,255,255,0.5)" strokeWidth={2} />
+              <Text style={styles.miniStatVal}>₹{(earnings?.totalTips ?? 0).toFixed(0)}</Text>
+              <Text style={styles.miniStatLbl}>Tips</Text>
+            </View>
+            <View style={styles.miniDivider} />
+            <View style={styles.miniStat}>
+              <Award size={13} color="rgba(255,255,255,0.5)" strokeWidth={2} />
+              <Text style={styles.miniStatVal}>₹{(earnings?.totalIncentives ?? 0).toFixed(0)}</Text>
+              <Text style={styles.miniStatLbl}>Incentives</Text>
+            </View>
+            <View style={styles.miniDivider} />
+            <View style={styles.miniStat}>
+              <Award size={13} color="#FFC52E" strokeWidth={2} />
+              <Text style={styles.miniStatVal}>₹{(earnings?.totalBonusEarnings ?? 0).toFixed(0)}</Text>
+              <Text style={styles.miniStatLbl}>Bonus</Text>
+            </View>
           </View>
-        </View>
 
-        {/* Filter */}
-        <View style={styles.periodContainer}>
-          <Text style={styles.filterLabel}>Filter by time</Text>
-          <TouchableOpacity
-            style={styles.filterButton}
-            onPress={() => setIsFilterOpen((prev) => !prev)}
-            activeOpacity={0.85}
-          >
-            <Text style={styles.filterButtonText}>{selectedFilterLabel}</Text>
-            <ChevronDown
-              size={18}
-              color={riderTheme.colors.textSecondary}
-              strokeWidth={2.5}
-              style={[styles.filterChevron, isFilterOpen && styles.filterChevronOpen]}
-            />
-          </TouchableOpacity>
+          {/* Date range row */}
+          <View style={styles.periodRow}>
+            {(['today', '7d', '30d'] as Mode[]).map((m) => (
+              <TouchableOpacity
+                key={m}
+                style={[styles.periodPill, mode === m && styles.periodPillActive]}
+                onPress={() => handlePreset(m)}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.periodText, mode === m && styles.periodTextActive]}>
+                  {m === 'today' ? 'Today' : m === '7d' ? '7 Days' : '30 Days'}
+                </Text>
+              </TouchableOpacity>
+            ))}
+            <TouchableOpacity
+              style={[styles.periodPill, styles.periodPillCalendar, (mode === 'custom' || showCalendar) && styles.periodPillCalendarActive]}
+              onPress={() => {
+                if (mode !== 'custom') {
+                  // Seed the calendar with appropriate preset dates
+                  const { start, end } = getPresetDates(mode);
+                  setRangeStart(start);
+                  setRangeEnd(end);
+                  setPickingEnd(false);
+                }
+                setShowCalendar((v) => !v);
+              }}
+              activeOpacity={0.8}
+            >
+              <CalendarRange size={14} color={(mode === 'custom' || showCalendar) ? '#1A0C08' : 'rgba(255,255,255,0.65)'} strokeWidth={2.5} />
+              <Text style={[styles.periodText, (mode === 'custom' || showCalendar) && styles.periodTextActive]}>
+                {mode === 'custom' ? 'Range' : 'Pick'}
+              </Text>
+            </TouchableOpacity>
+          </View>
 
-          {isFilterOpen && (
-            <View style={styles.filterDropdown}>
-              {FILTER_OPTIONS.map((option) => (
-                <TouchableOpacity
-                  key={option.value}
-                  style={[
-                    styles.filterOption,
-                    selectedPeriod === option.value && styles.filterOptionActive,
-                  ]}
-                  onPress={() => {
-                    setSelectedPeriod(option.value);
-                    setIsFilterOpen(false);
-                  }}
-                  activeOpacity={0.85}
-                >
-                  <Text
-                    style={[
-                      styles.filterOptionText,
-                      selectedPeriod === option.value && styles.filterOptionTextActive,
-                    ]}
-                  >
-                    {option.label}
-                  </Text>
+          {/* Inline calendar picker */}
+          {showCalendar && (
+            <View style={styles.calendarCard}>
+              {/* Month nav */}
+              <View style={styles.calNavRow}>
+                <TouchableOpacity style={styles.calNavBtn} onPress={prevMonth} activeOpacity={0.8}>
+                  <ChevronLeft size={18} color={riderTheme.colors.textPrimary} strokeWidth={2.5} />
                 </TouchableOpacity>
-              ))}
+                <Text style={styles.calMonthLabel}>
+                  {MONTHS[calMonth.getMonth()]} {calMonth.getFullYear()}
+                </Text>
+                <TouchableOpacity
+                  style={[styles.calNavBtn, new Date(calMonth.getFullYear(), calMonth.getMonth() + 1, 1) > today && styles.calNavBtnDisabled]}
+                  onPress={nextMonth}
+                  activeOpacity={0.8}
+                  disabled={new Date(calMonth.getFullYear(), calMonth.getMonth() + 1, 1) > today}
+                >
+                  <ChevronRight size={18} color={new Date(calMonth.getFullYear(), calMonth.getMonth() + 1, 1) > today ? 'rgba(26,12,8,0.2)' : riderTheme.colors.textPrimary} strokeWidth={2.5} />
+                </TouchableOpacity>
+              </View>
+
+              {/* Day headers */}
+              <View style={styles.calDayHeaders}>
+                {DAYS.map((d) => <Text key={d} style={styles.calDayHeader}>{d}</Text>)}
+              </View>
+
+              {/* Day grid */}
+              <CalendarGrid
+                calMonth={calMonth}
+                today={today}
+                rangeStart={rangeStart}
+                rangeEnd={rangeEnd}
+                pickingEnd={pickingEnd}
+                onDayPress={handleCalendarDayPress}
+              />
+
+              {/* Range display + apply */}
+              <View style={styles.calFooter}>
+                <View style={styles.calRangeDisplay}>
+                  <View style={[styles.calRangeChip, !pickingEnd && styles.calRangeChipActive]}>
+                    <Text style={styles.calRangeChipLabel}>FROM</Text>
+                    <Text style={styles.calRangeChipDate}>{rangeStart.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</Text>
+                  </View>
+                  <View style={styles.calRangeArrow}>
+                    <ChevronRight size={14} color={riderTheme.colors.textMuted} strokeWidth={2} />
+                  </View>
+                  <View style={[styles.calRangeChip, pickingEnd && styles.calRangeChipActive]}>
+                    <Text style={styles.calRangeChipLabel}>TO</Text>
+                    <Text style={styles.calRangeChipDate}>{rangeEnd.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</Text>
+                  </View>
+                </View>
+                <TouchableOpacity style={styles.calApplyBtn} onPress={handleApplyRange} activeOpacity={0.88}>
+                  <Text style={styles.calApplyBtnText}>Apply Range</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           )}
         </View>
 
-        {/* Content */}
+        {/* ── BREAKDOWN ── */}
         <ScrollView
-          style={styles.content}
-          contentContainerStyle={styles.contentContainer}
+          style={styles.feed}
+          contentContainerStyle={styles.feedContent}
           showsVerticalScrollIndicator={false}
           refreshControl={
-            <RefreshControl
-              refreshing={isLoading}
-              onRefresh={fetchEarnings}
-              tintColor={riderTheme.colors.primary}
-              colors={[riderTheme.colors.primary]}
-            />
+            <RefreshControl refreshing={isLoading} onRefresh={fetchEarnings} tintColor="#E8352A" colors={['#E8352A']} />
           }
         >
-          {isLoading && !earnings ? (
-            <View style={styles.loadingContainer}>
-              <ActivityIndicator size="large" color={riderTheme.colors.primary} />
-              <Text style={styles.loadingText}>Loading earnings...</Text>
-            </View>
-          ) : earnings ? (
+          {!isLoading && earnings && earnings.dailyBreakdown && earnings.dailyBreakdown.length > 0 && (
+            <Text style={styles.rangeLabel}>{rangeLabel}</Text>
+          )}
+          {!isLoading && earnings && earnings.dailyBreakdown && earnings.dailyBreakdown.length > 0 && (
             <>
-              {/* Total Earnings Card */}
-              <View style={styles.totalCard}>
-                <View style={styles.totalHeader}>
-                  <View style={styles.totalIconWrap}>
-                    <IndianRupee size={22} color={riderTheme.colors.success} strokeWidth={2.5} />
-                  </View>
-                  <Text style={styles.totalLabel}>Total Earnings</Text>
-                </View>
-                <Text style={styles.totalAmount}>₹{(earnings.totalEarnings || 0).toFixed(2)}</Text>
-                
-                {/* Stats Grid */}
-                <View style={styles.statsGrid}>
-                  <View style={styles.statCard}>
-                    <View style={styles.statIcon}>
-                      <Package size={18} color={riderTheme.colors.primary} strokeWidth={2.5} />
-                    </View>
-                    <Text style={styles.statValue}>{earnings.totalDeliveries || 0}</Text>
-                    <Text style={styles.statLabel}>Deliveries</Text>
-                  </View>
-                  
-                  <View style={styles.statCard}>
-                    <View style={styles.statIcon}>
-                      <TrendingUp size={18} color={riderTheme.colors.primary} strokeWidth={2.5} />
-                    </View>
-                    <Text style={styles.statValue}>₹{(earnings.totalTips || 0).toFixed(0)}</Text>
-                    <Text style={styles.statLabel}>Tips</Text>
-                  </View>
-
-                  <View style={styles.statCard}>
-                    <View style={styles.statIcon}>
-                      <Award size={18} color={riderTheme.colors.primary} strokeWidth={2.5} />
-                    </View>
-                    <Text style={styles.statValue}>₹{(earnings.totalIncentives || 0).toFixed(0)}</Text>
-                    <Text style={styles.statLabel}>Incentives</Text>
-                  </View>
-                </View>
+              {/* Unsettled / Settled tabs */}
+              <View style={styles.tabRow}>
+                <TouchableOpacity
+                  style={[styles.tab, selectedBreakdownTab === 'unsettled' && styles.tabActive]}
+                  onPress={() => setSelectedBreakdownTab('unsettled')}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[styles.tabTxt, selectedBreakdownTab === 'unsettled' && styles.tabTxtActive]}>
+                    Unsettled · {unsettled.length}
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.tab, selectedBreakdownTab === 'settled' && styles.tabActive]}
+                  onPress={() => setSelectedBreakdownTab('settled')}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[styles.tabTxt, selectedBreakdownTab === 'settled' && styles.tabTxtActive]}>
+                    Settled · {settled.length}
+                  </Text>
+                </TouchableOpacity>
               </View>
 
-              {/* Daily Breakdown */}
-              {earnings.dailyBreakdown && earnings.dailyBreakdown.length > 0 && (
-                <View style={styles.breakdownSection}>
-                  <View style={styles.sectionHeader}>
-                    <Calendar size={18} color={riderTheme.colors.textSecondary} strokeWidth={2.5} />
-                    <Text style={styles.sectionTitle}>Daily Breakdown</Text>
-                  </View>
-
-                  <View style={styles.breakdownTabs}>
-                    <TouchableOpacity
-                      style={[
-                        styles.breakdownTab,
-                        selectedBreakdownTab === 'unsettled' && styles.breakdownTabActive,
-                      ]}
-                      onPress={() => setSelectedBreakdownTab('unsettled')}
-                      activeOpacity={0.85}
-                    >
-                      <Text
+              {rows.length === 0 ? (
+                <View style={styles.emptyWrap}>
+                  <Text style={styles.emptyText}>No {selectedBreakdownTab} entries for this period.</Text>
+                </View>
+              ) : (
+                <View style={styles.rowList}>
+                  {rows.map((day, i) => (
+                    <View key={i} style={styles.row}>
+                      <View
                         style={[
-                          styles.breakdownTabText,
-                          selectedBreakdownTab === 'unsettled' && styles.breakdownTabTextActive,
+                          styles.rowIconCircle,
+                          day.settled && styles.rowIconCircleSettled,
+                          isBonusEntry(day) && styles.rowIconCircleBonus,
                         ]}
                       >
-                        Unsettled ({unsettledBreakdown.length})
-                      </Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={[
-                        styles.breakdownTab,
-                        selectedBreakdownTab === 'settled' && styles.breakdownTabActive,
-                      ]}
-                      onPress={() => setSelectedBreakdownTab('settled')}
-                      activeOpacity={0.85}
-                    >
-                      <Text
-                        style={[
-                          styles.breakdownTabText,
-                          selectedBreakdownTab === 'settled' && styles.breakdownTabTextActive,
-                        ]}
-                      >
-                        Settled ({settledBreakdown.length})
-                      </Text>
-                    </TouchableOpacity>
-                  </View>
+                        {day.settled ? (
+                          <CheckCircle2 size={18} color="#22C55E" strokeWidth={2.5} />
+                        ) : isBonusEntry(day) ? (
+                          <Award size={18} color="#D97706" strokeWidth={2.5} />
+                        ) : (
+                          <Package size={18} color="#E8352A" strokeWidth={2.5} />
+                        )}
+                      </View>
 
-                  {visibleBreakdown.length === 0 ? (
-                    <View style={styles.breakdownEmptyState}>
-                      <Text style={styles.breakdownEmptyText}>
-                        No {selectedBreakdownTab} earnings for this period.
-                      </Text>
-                    </View>
-                  ) : visibleBreakdown.map((day, index) => (
-                    <View key={index} style={styles.dayCard}>
-                      <View style={styles.dayHeader}>
-                        <Text style={styles.dayOrderId}>
-                          {getDisplayOrderId(day.date, day.orderId) || 'Delivery'}
+                      <View style={styles.rowInfo}>
+                        <Text style={styles.rowOrderId} numberOfLines={1}>
+                          {isBonusEntry(day)
+                            ? day.bonusLabel || 'Milestone Bonus'
+                            : getDisplayOrderId(day.date, day.orderId) || 'Delivery'}
                         </Text>
-                        <Text style={styles.dayAmount}>₹{(day.totalEarnings || 0).toFixed(2)}</Text>
+                        <View style={styles.rowMeta}>
+                          {day.date && (
+                            <View style={styles.rowMetaItem}>
+                              <Calendar size={11} color="#9E7A6A" strokeWidth={2} />
+                              <Text style={styles.rowMetaTxt}>{getDisplayDate(day.date)}</Text>
+                            </View>
+                          )}
+                          {isBonusEntry(day) ? (
+                            <View style={styles.rowMetaItem}>
+                              <Award size={11} color="#9E7A6A" strokeWidth={2} />
+                              <Text style={styles.rowMetaTxt}>
+                                {day.milestoneStops ?? 0} stop target reached
+                              </Text>
+                            </View>
+                          ) : (
+                            <>
+                              <View style={styles.rowMetaItem}>
+                                <Package size={11} color="#9E7A6A" strokeWidth={2} />
+                                <Text style={styles.rowMetaTxt}>{day.totalDeliveries ?? 0} deliveries</Text>
+                              </View>
+                              <View style={styles.rowMetaItem}>
+                                <Clock size={11} color="#9E7A6A" strokeWidth={2} />
+                                <Text style={styles.rowMetaTxt}>{day.onlineTimeMinutes ?? 0}m</Text>
+                              </View>
+                            </>
+                          )}
+                        </View>
+                        {day.settled && day.settlementId && (
+                          <Text style={styles.settlementId}>ID: {day.settlementId}</Text>
+                        )}
                       </View>
-                      <View style={styles.dayMetrics}>
-                        <View style={styles.dayMetric}>
-                          <Package size={14} color={riderTheme.colors.textMuted} strokeWidth={2} />
-                          <View style={styles.dayMetricContent}>
-                            <Text style={styles.dayMetricText}>{day.totalDeliveries || 0} deliveries</Text>
-                            <Text style={styles.dayDate}>{getDisplayDate(day.date)}</Text>
-                          </View>
-                        </View>
-                        <View style={styles.dayMetric}>
-                          <Clock size={14} color={riderTheme.colors.textMuted} strokeWidth={2} />
-                          <Text style={styles.dayMetricText}>{day.onlineTimeMinutes || 0} min</Text>
-                        </View>
-                      </View>
-                      {day.settled && (
-                        <View style={styles.settlementCard}>
-                          <View style={styles.settlementHeader}>
-                            <CheckCircle2 size={16} color={riderTheme.colors.success} strokeWidth={2.5} />
-                            <Text style={styles.settlementTitle}>Settlement completed</Text>
-                          </View>
-                          {day.settlementId ? (
-                            <Text style={styles.settlementText}>Settlement ID: {day.settlementId}</Text>
-                          ) : null}
-                          {day.settledAt ? (
-                            <Text style={styles.settlementText}>Settled At: {day.settledAt}</Text>
-                          ) : null}
-                        </View>
-                      )}
+
+                      <Text
+                        style={[
+                          styles.rowAmount,
+                          day.settled && styles.rowAmountSettled,
+                          isBonusEntry(day) && styles.rowAmountBonus,
+                        ]}
+                      >
+                        ₹{(day.totalEarnings ?? 0).toFixed(0)}
+                      </Text>
                     </View>
                   ))}
                 </View>
               )}
             </>
-          ) : (
-            <View style={styles.emptyState}>
-              <View style={styles.emptyIconWrap}>
-                <TrendingUp size={52} color={riderTheme.colors.textMuted} strokeWidth={2} />
+          )}
+
+          {!isLoading && (!earnings || !earnings.dailyBreakdown || earnings.dailyBreakdown.length === 0) && (
+            <View style={styles.bigEmpty}>
+              <View style={styles.bigEmptyCircle}>
+                <IndianRupee size={48} color="#E8352A" strokeWidth={1.5} />
               </View>
-              <Text style={styles.emptyTitle}>No Earnings Yet</Text>
-              <Text style={styles.emptyText}>
-                Complete deliveries to start earning and see your stats here.
-              </Text>
+              <Text style={styles.bigEmptyTitle}>No Earnings Yet</Text>
+              <Text style={styles.bigEmptyBody}>Complete deliveries to see your income breakdown here.</Text>
             </View>
           )}
         </ScrollView>
@@ -296,326 +515,207 @@ export default function EarningsScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: riderTheme.colors.background,
+  // day cell
+  calDayRow: { flexDirection: 'row', marginBottom: 4 },
+  calDayCell: {
+    flex: 1, aspectRatio: 1, alignItems: 'center', justifyContent: 'center',
+    borderRadius: 999, maxHeight: 36,
   },
-  header: {
-    backgroundColor: riderTheme.colors.surface,
-    paddingHorizontal: 20,
-    paddingBottom: 20,
-    ...riderTheme.shadow.medium,
-  },
-  headerTitle: {
-    fontSize: 28,
-    fontWeight: '800',
-    color: riderTheme.colors.textPrimary,
-    letterSpacing: 0.3,
-    marginBottom: 2,
-  },
-  headerSubtitle: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: riderTheme.colors.textSecondary,
-  },
-  periodContainer: {
-    backgroundColor: riderTheme.colors.surface,
-    paddingHorizontal: 20,
-    paddingBottom: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: riderTheme.colors.borderLight,
-  },
-  filterLabel: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: riderTheme.colors.textSecondary,
-    marginBottom: 8,
-    textTransform: 'uppercase',
-    letterSpacing: 0.4,
-  },
-  filterButton: {
-    flexDirection: 'row',
+  calDayCellStart: { backgroundColor: '#E8352A' },
+  calDayCellEnd: { backgroundColor: '#E8352A' },
+  calDayCellInRange: { backgroundColor: '#FCECEA', borderRadius: 0 },
+  calDayCellInRangeStart: { borderTopLeftRadius: 999, borderBottomLeftRadius: 999 },
+  calDayCellInRangeEnd: { borderTopRightRadius: 999, borderBottomRightRadius: 999 },
+  calDayCellFuture: { opacity: 0.25 },
+  calDayText: { fontSize: 13, fontWeight: '600', color: riderTheme.colors.textPrimary },
+  calDayTextSelected: { color: '#FFFFFF', fontWeight: '800' },
+  calDayTextInRange: { color: riderTheme.colors.primaryDark },
+  calDayTextMuted: { color: riderTheme.colors.textMuted, fontWeight: '400' },
+
+  root: { flex: 1, backgroundColor: '#FFFDF7' },
+
+  // HERO
+  hero: {
+    backgroundColor: '#1A0C08',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: riderTheme.colors.surfaceMuted,
-    borderRadius: riderTheme.radius.lg,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
+    paddingHorizontal: 24,
+    paddingBottom: 28,
   },
-  filterButtonText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: riderTheme.colors.textPrimary,
-  },
-  filterChevron: {
-    transform: [{ rotate: '0deg' }],
-  },
-  filterChevronOpen: {
-    transform: [{ rotate: '180deg' }],
-  },
-  filterDropdown: {
-    marginTop: 8,
-    backgroundColor: riderTheme.colors.surface,
-    borderRadius: riderTheme.radius.lg,
-    borderWidth: 1,
-    borderColor: riderTheme.colors.borderLight,
-    overflow: 'hidden',
-    ...riderTheme.shadow.small,
-  },
-  filterOption: {
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: riderTheme.colors.borderLight,
-  },
-  filterOptionActive: {
-    backgroundColor: riderTheme.colors.successSoft,
-  },
-  filterOptionText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: riderTheme.colors.textPrimary,
-  },
-  filterOptionTextActive: {
-    color: riderTheme.colors.success,
-  },
-  content: {
-    flex: 1,
-  },
-  contentContainer: {
-    padding: 20,
-  },
-  loadingContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 100,
-  },
-  loadingText: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: riderTheme.colors.textSecondary,
-    marginTop: 16,
-  },
-  totalCard: {
-    backgroundColor: riderTheme.colors.surface,
-    borderRadius: riderTheme.radius.lg,
-    padding: 18,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: riderTheme.colors.borderLight,
-    ...riderTheme.shadow.medium,
-  },
-  totalHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    marginBottom: 12,
-  },
-  totalIconWrap: {
-    width: 44,
-    height: 44,
-    borderRadius: riderTheme.radius.md,
-    backgroundColor: riderTheme.colors.successSoft,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  totalLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: riderTheme.colors.textSecondary,
-  },
-  totalAmount: {
-    fontSize: 32,
-    fontWeight: '800',
-    color: riderTheme.colors.textPrimary,
-    marginBottom: 14,
-    letterSpacing: 0.3,
-  },
-  statsGrid: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  statCard: {
-    flex: 1,
-    backgroundColor: riderTheme.colors.surfaceMuted,
-    borderRadius: riderTheme.radius.md,
-    padding: 12,
-    alignItems: 'center',
-    gap: 6,
-  },
-  statIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: riderTheme.radius.sm,
-    backgroundColor: riderTheme.colors.surface,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 2,
-  },
-  statValue: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: riderTheme.colors.textPrimary,
-  },
-  statLabel: {
+  heroLabel: {
     fontSize: 11,
-    fontWeight: '600',
-    color: riderTheme.colors.textSecondary,
-  },
-  breakdownSection: {
-    marginTop: 4,
-  },
-  breakdownTabs: {
-    flexDirection: 'row',
-    backgroundColor: riderTheme.colors.surfaceMuted,
-    borderRadius: riderTheme.radius.lg,
-    padding: 4,
-    gap: 4,
-    marginBottom: 14,
-  },
-  breakdownTab: {
-    flex: 1,
-    paddingVertical: 10,
-    paddingHorizontal: 8,
-    alignItems: 'center',
-    borderRadius: riderTheme.radius.md,
-  },
-  breakdownTabActive: {
-    backgroundColor: riderTheme.colors.primary,
-    ...riderTheme.shadow.small,
-  },
-  breakdownTabText: {
-    fontSize: 12,
     fontWeight: '700',
-    color: riderTheme.colors.textSecondary,
+    color: 'rgba(255,255,255,0.4)',
+    letterSpacing: 1.5,
+    textTransform: 'uppercase',
+    marginBottom: 6,
   },
-  breakdownTabTextActive: {
-    color: riderTheme.colors.textInverse,
-  },
-  breakdownEmptyState: {
-    backgroundColor: riderTheme.colors.surface,
-    borderRadius: riderTheme.radius.lg,
-    padding: 18,
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: riderTheme.colors.borderLight,
-  },
-  breakdownEmptyText: {
-    fontSize: 13,
-    fontWeight: '500',
-    color: riderTheme.colors.textSecondary,
-    textAlign: 'center',
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 14,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: riderTheme.colors.textPrimary,
-  },
-  dayCard: {
-    backgroundColor: riderTheme.colors.surface,
-    borderRadius: riderTheme.radius.lg,
-    padding: 16,
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: riderTheme.colors.borderLight,
-    ...riderTheme.shadow.small,
-  },
-  dayHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  dayDate: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: riderTheme.colors.textPrimary,
-  },
-  dayAmount: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: riderTheme.colors.success,
-  },
-  dayMetrics: {
-    flexDirection: 'row',
-    gap: 16,
-  },
-  dayMetric: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 6,
-  },
-  dayMetricContent: {
-    gap: 2,
-  },
-  dayMetricText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: riderTheme.colors.textSecondary,
-  },
-  dayOrderId: {
-    fontSize: 10,
-    fontWeight: '400',
-    color: riderTheme.colors.textMuted,
-  },
-  dayDate: {
-    fontSize: 10,
-    fontWeight: '400',
-    color: riderTheme.colors.textMuted,
-  },
-  settlementCard: {
-    marginTop: 12,
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: riderTheme.colors.borderLight,
-    gap: 4,
-  },
-  settlementHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  settlementTitle: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: riderTheme.colors.success,
-  },
-  settlementText: {
-    fontSize: 12,
-    fontWeight: '500',
-    color: riderTheme.colors.textSecondary,
-  },
-  emptyState: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 100,
-    paddingHorizontal: 40,
-  },
-  emptyIconWrap: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    backgroundColor: riderTheme.colors.surfaceMuted,
-    alignItems: 'center',
-    justifyContent: 'center',
+  heroAmount: {
+    fontSize: 54,
+    fontWeight: '900',
+    color: '#FFFFFF',
+    letterSpacing: -1,
     marginBottom: 24,
   },
-  emptyTitle: {
-    fontSize: 22,
-    fontWeight: '800',
-    color: riderTheme.colors.textPrimary,
-    marginBottom: 10,
+
+  // MINI STATS
+  miniStats: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderRadius: 16,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    marginBottom: 20,
+    gap: 0,
+    alignSelf: 'stretch',
+    justifyContent: 'space-evenly',
   },
-  emptyText: {
-    fontSize: 15,
-    color: riderTheme.colors.textSecondary,
-    textAlign: 'center',
-    lineHeight: 22,
+  miniStat: { alignItems: 'center', gap: 3 },
+  miniStatVal: { fontSize: 16, fontWeight: '800', color: '#FFFFFF' },
+  miniStatLbl: { fontSize: 10, fontWeight: '500', color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', letterSpacing: 0.5 },
+  miniDivider: { width: 1, height: 32, backgroundColor: 'rgba(255,255,255,0.1)' },
+
+  // PERIOD / RANGE ROW
+  periodRow: { flexDirection: 'row', gap: 8, flexWrap: 'nowrap', justifyContent: 'center' },
+  periodPill: {
+    paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.08)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)',
   },
+  periodPillActive: { backgroundColor: '#FFC52E', borderColor: '#FFC52E' },
+  periodPillCalendar: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    paddingHorizontal: 12,
+  },
+  periodPillCalendarActive: { backgroundColor: '#FFC52E', borderColor: '#FFC52E' },
+  periodText: { fontSize: 12, fontWeight: '700', color: 'rgba(255,255,255,0.65)' },
+  periodTextActive: { color: '#1A0C08' },
+
+  // RANGE LABEL
+  rangeLabel: {
+    fontSize: 12, fontWeight: '600', color: riderTheme.colors.textMuted,
+    marginBottom: 10, textAlign: 'center',
+  },
+
+  // CALENDAR CARD
+  calendarCard: {
+    backgroundColor: riderTheme.colors.surface,
+    borderRadius: 20,
+    padding: 16,
+    marginTop: 12,
+    alignSelf: 'stretch',
+    borderWidth: 1,
+    borderColor: riderTheme.colors.border,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 6,
+  },
+  calNavRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12,
+  },
+  calNavBtn: {
+    width: 36, height: 36, borderRadius: 18,
+    backgroundColor: riderTheme.colors.surfaceMuted,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  calNavBtnDisabled: { opacity: 0.35 },
+  calMonthLabel: { fontSize: 16, fontWeight: '800', color: riderTheme.colors.textPrimary },
+  calDayHeaders: { flexDirection: 'row', marginBottom: 6 },
+  calDayHeader: {
+    flex: 1, textAlign: 'center',
+    fontSize: 11, fontWeight: '700',
+    color: riderTheme.colors.textMuted,
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
+  },
+  // day cells rendered via component
+  calFooter: { marginTop: 14, gap: 12 },
+  calRangeDisplay: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10 },
+  calRangeChip: {
+    alignItems: 'center', paddingHorizontal: 16, paddingVertical: 10,
+    borderRadius: 12, backgroundColor: riderTheme.colors.surfaceMuted,
+    borderWidth: 1.5, borderColor: riderTheme.colors.border,
+    minWidth: 80,
+  },
+  calRangeChipActive: {
+    borderColor: riderTheme.colors.primary,
+    backgroundColor: riderTheme.colors.primarySoft,
+  },
+  calRangeChipLabel: { fontSize: 9, fontWeight: '700', color: riderTheme.colors.textMuted, letterSpacing: 0.8, textTransform: 'uppercase', marginBottom: 2 },
+  calRangeChipDate: { fontSize: 14, fontWeight: '800', color: riderTheme.colors.textPrimary },
+  calRangeArrow: { opacity: 0.5 },
+  calApplyBtn: {
+    backgroundColor: riderTheme.colors.primary,
+    borderRadius: 14,
+    paddingVertical: 14,
+    alignItems: 'center',
+    shadowColor: riderTheme.colors.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 10,
+    elevation: 5,
+  },
+  calApplyBtnText: { fontSize: 14, fontWeight: '800', color: '#FFFFFF', letterSpacing: 0.3 },
+
+  // TABS
+  tabRow: { flexDirection: 'row', gap: 8, paddingBottom: 12 },
+  tab: {
+    paddingHorizontal: 18, paddingVertical: 9, borderRadius: 999,
+    backgroundColor: '#F8F3EF', borderWidth: 1, borderColor: '#E8DDD8',
+  },
+  tabActive: { backgroundColor: '#1A0C08', borderColor: '#1A0C08' },
+  tabTxt: { fontSize: 13, fontWeight: '700', color: '#9E7A6A' },
+  tabTxtActive: { color: '#FFFFFF' },
+
+  // FEED
+  feed: { flex: 1 },
+  feedContent: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 120 },
+
+  // ROW ITEMS
+  rowList: { gap: 10 },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#F0E8E4',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  rowIconCircle: {
+    width: 42, height: 42, borderRadius: 21,
+    backgroundColor: '#FCECEA', alignItems: 'center', justifyContent: 'center',
+    flexShrink: 0,
+  },
+  rowIconCircleSettled: { backgroundColor: '#DCFCE7' },
+  rowIconCircleBonus: { backgroundColor: '#FEF3C7' },
+  rowInfo: { flex: 1, gap: 4 },
+  rowOrderId: { fontSize: 14, fontWeight: '800', color: '#1A0C08' },
+  rowMeta: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  rowMetaItem: { flexDirection: 'row', alignItems: 'center', gap: 3 },
+  rowMetaTxt: { fontSize: 11, fontWeight: '500', color: '#9E7A6A' },
+  settlementId: { fontSize: 11, color: '#22C55E', fontWeight: '600', marginTop: 2 },
+  rowAmount: { fontSize: 18, fontWeight: '900', color: '#E8352A', flexShrink: 0 },
+  rowAmountSettled: { color: '#22C55E' },
+  rowAmountBonus: { color: '#D97706' },
+
+  // EMPTY (within feed)
+  emptyWrap: { alignItems: 'center', paddingTop: 40 },
+  emptyText: { fontSize: 14, color: '#9E7A6A', fontWeight: '500' },
+
+  // BIG EMPTY (no data)
+  bigEmpty: { alignItems: 'center', paddingTop: 60, paddingHorizontal: 36 },
+  bigEmptyCircle: {
+    width: 104, height: 104, borderRadius: 52,
+    backgroundColor: '#FCECEA', alignItems: 'center', justifyContent: 'center', marginBottom: 24,
+  },
+  bigEmptyTitle: { fontSize: 22, fontWeight: '900', color: '#1A0C08', marginBottom: 10 },
+  bigEmptyBody: { fontSize: 14, color: '#5C3D2E', textAlign: 'center', lineHeight: 22 },
 });

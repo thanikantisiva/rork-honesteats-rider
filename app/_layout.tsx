@@ -25,6 +25,7 @@ import { stopRiderRideAlert } from '@/services/rider-floating-service';
 import { StartupSplash } from '@/components/StartupSplash';
 import { riderTheme } from '@/theme/riderTheme';
 import appCheck from '@react-native-firebase/app-check';
+import { getMissingMandatoryPermissions } from '@/services/mandatory-permissions';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -61,20 +62,23 @@ const queryClient = new QueryClient();
 
 function RootLayoutNav() {
   const { isLoggedIn, isLoading, disclosureAccepted } = useAuth();
-  const { refreshOrders, acceptOrder, rejectOrder } = useOrders();
+  const { refreshOrders, acceptOrder, rejectOrder, markOrderAlerting } = useOrders();
   const segments = useSegments();
   const router = useRouter();
   const [showStartupSplash, setShowStartupSplash] = useState(true);
+  const [permissionsReady, setPermissionsReady] = useState(false);
 
   // Refs — prevent stale closures inside the one-time notification listener setup
   const refreshOrdersRef = useRef(refreshOrders);
   const acceptOrderRef = useRef(acceptOrder);
   const rejectOrderRef = useRef(rejectOrder);
+  const markOrderAlertingRef = useRef(markOrderAlerting);
   const routerRef = useRef(router);
 
   useEffect(() => { refreshOrdersRef.current = refreshOrders; }, [refreshOrders]);
   useEffect(() => { acceptOrderRef.current = acceptOrder; }, [acceptOrder]);
   useEffect(() => { rejectOrderRef.current = rejectOrder; }, [rejectOrder]);
+  useEffect(() => { markOrderAlertingRef.current = markOrderAlerting; }, [markOrderAlerting]);
   useEffect(() => { routerRef.current = router; }, [router]);
 
   useEffect(() => {
@@ -84,6 +88,10 @@ function RootLayoutNav() {
       // Immediately refresh orders so the new offer appears without waiting for the 30s poll
       const type = remoteMessage?.data?.type;
       if (type === 'order_assigned' || type === 'order_accepted') {
+        const orderId = remoteMessage?.data?.orderId;
+        if (orderId) {
+          markOrderAlertingRef.current(String(orderId));
+        }
         void refreshOrdersRef.current(true);
       }
     };
@@ -105,7 +113,7 @@ function RootLayoutNav() {
 
       if (actionId === 'ACCEPT_ORDER') {
         try {
-          await acceptOrderRef.current(orderId, 'OFFERED_TO_RIDER');
+          await acceptOrderRef.current(orderId, 'RIDER_ASSIGNED');
           routerRef.current.push(`/order-details?orderId=${orderId}` as any);
         } catch (err) {
           console.error('Failed to accept order from notification:', err);
@@ -186,14 +194,48 @@ function RootLayoutNav() {
   }, [isLoggedIn, isLoading, disclosureAccepted, segments, router]);
 
   useEffect(() => {
-    if (!isLoading) {
+    let cancelled = false;
+
+    const checkPermissions = async () => {
+      if (isLoading) return;
+
+      if (!isLoggedIn || !disclosureAccepted) {
+        if (!cancelled) setPermissionsReady(true);
+        return;
+      }
+
+      const missing = await getMissingMandatoryPermissions();
+      if (cancelled) return;
+
+      setPermissionsReady(missing.length === 0);
+      const currentSegment = segments[0] as string | undefined;
+      if (missing.length > 0 && currentSegment !== 'disclosure') {
+        router.replace('/disclosure');
+      }
+    };
+
+    void checkPermissions();
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') {
+        void checkPermissions();
+      }
+    });
+
+    return () => {
+      cancelled = true;
+      sub.remove();
+    };
+  }, [isLoggedIn, isLoading, disclosureAccepted, segments, router]);
+
+  useEffect(() => {
+    if (!isLoading && (!isLoggedIn || !disclosureAccepted || permissionsReady)) {
       SplashScreen.hideAsync();
     }
-  }, [isLoading]);
+  }, [isLoading, isLoggedIn, disclosureAccepted, permissionsReady]);
 
   return (
     <>
-      <StatusBar style="dark" backgroundColor={riderTheme.colors.background} translucent={false} />
+      <StatusBar style="light" backgroundColor="transparent" translucent />
       <Stack
         screenOptions={{
           headerStyle: { backgroundColor: riderTheme.colors.surface },

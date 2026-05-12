@@ -9,12 +9,13 @@ import { RiderOrder } from '@/types';
 import { useAuth } from './AuthContext';
 import { useLocation } from './LocationContext';
 import { startNewOrderAlert, stopNewOrderAlert, unloadNewOrderAlert } from '@/services/order-alert';
-import { stopRiderRideAlert } from '@/services/rider-floating-service';
+import { muteRiderRideAlert, stopRiderRideAlert, startRiderRideAlert, muteAllRiderAlerts } from '@/services/rider-floating-service';
 
 interface OrdersContextType {
   orders: RiderOrder[];
   activeOrders: RiderOrder[];
   completedOrders: RiderOrder[];
+  ringingOrderIds: string[];
   riderRating: number | null;
   riderRatedCount: number;
   isLoading: boolean;
@@ -24,23 +25,36 @@ interface OrdersContextType {
   acceptOrder: (orderId: string, status: string) => Promise<void>;
   rejectOrder: (orderId: string, reason: string) => Promise<void>;
   dismissOrderAlert: (orderId: string) => Promise<void>;
+  muteOrderAlert: (orderId: string) => Promise<void>;
+  muteAllAlerts: () => Promise<void>;
+  markOrderAlerting: (orderId: string) => void;
   updateOrderStatus: (orderId: string, status: string, otp?: string) => Promise<void>;
 }
 
 const OrdersContext = createContext<OrdersContextType | undefined>(undefined);
+const ALERT_SUPPRESSION_MS = 20_000;
 
 export function OrdersProvider({ children }: { children: ReactNode }) {
   const { rider, isLoggedIn } = useAuth();
   const { isOnline } = useLocation();
   const [orders, setOrders] = useState<RiderOrder[]>([]);
   const [completedOrdersList, setCompletedOrdersList] = useState<RiderOrder[]>([]);
+  const [ringingOrderIds, setRingingOrderIds] = useState<string[]>([]);
   const [riderRating, setRiderRating] = useState<number | null>(null);
   const [riderRatedCount, setRiderRatedCount] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingCompleted, setIsLoadingCompleted] = useState(false);
   const knownOrderIdsRef = useRef<Set<string>>(new Set());
   const alertingOrderIdsRef = useRef<Set<string>>(new Set());
+  const forceAssignedAlertingIdsRef = useRef<Set<string>>(new Set());
+  const everOfferedOrderIdsRef = useRef<Set<string>>(new Set());
   const hasFetchedOrdersRef = useRef(false);
+  const suppressedAlertOrderIdsRef = useRef<Map<string, number>>(new Map());
+  const mutedAlertOrderIdsRef = useRef<Set<string>>(new Set());
+
+  const syncRingingOrderIdsState = useCallback((orderIds?: Iterable<string>) => {
+    setRingingOrderIds(orderIds ? [...orderIds] : [...alertingOrderIdsRef.current]);
+  }, []);
 
   const syncAlertPlayback = useCallback(async () => {
     if (alertingOrderIdsRef.current.size > 0) {
@@ -57,18 +71,35 @@ export function OrdersProvider({ children }: { children: ReactNode }) {
     // can't gate this on the local set membership.
     stopRiderRideAlert(orderId);
 
+    forceAssignedAlertingIdsRef.current.delete(orderId);
+
     if (!alertingOrderIdsRef.current.delete(orderId)) {
+      // If neither set had this order, nothing more to do
+      if (!forceAssignedAlertingIdsRef.current.size) {
+        syncRingingOrderIdsState();
+      }
       return;
     }
 
+    syncRingingOrderIdsState();
     await syncAlertPlayback();
-  }, [syncAlertPlayback]);
+  }, [syncAlertPlayback, syncRingingOrderIdsState]);
+
+  const suppressOrderAlert = useCallback((orderId: string) => {
+    suppressedAlertOrderIdsRef.current.set(orderId, Date.now() + ALERT_SUPPRESSION_MS);
+    stopRiderRideAlert(orderId);
+  }, []);
 
   useEffect(() => {
     if (!isLoggedIn || !rider) {
       knownOrderIdsRef.current = new Set();
       alertingOrderIdsRef.current = new Set();
+      forceAssignedAlertingIdsRef.current = new Set();
+      everOfferedOrderIdsRef.current = new Set();
+      suppressedAlertOrderIdsRef.current = new Map();
+      mutedAlertOrderIdsRef.current = new Set();
       hasFetchedOrdersRef.current = false;
+      setRingingOrderIds([]);
       stopNewOrderAlert().catch(() => undefined);
     }
   }, [isLoggedIn, rider]);
@@ -106,6 +137,13 @@ export function OrdersProvider({ children }: { children: ReactNode }) {
 
     setIsLoading(true);
     try {
+      const now = Date.now();
+      for (const [orderId, expiresAt] of [...suppressedAlertOrderIdsRef.current.entries()]) {
+        if (expiresAt <= now) {
+          suppressedAlertOrderIdsRef.current.delete(orderId);
+        }
+      }
+
       // Fetch active orders and rider rating in parallel (rating from dedicated API)
       const [offeredResponse, riderAssignedResponse, pickedUpResponse, outForDeliveryResponse, ratingResponse] = await Promise.all([
         riderOrderAPI.getOrders(rider.riderId, 'OFFERED_TO_RIDER'),
@@ -124,9 +162,54 @@ export function OrdersProvider({ children }: { children: ReactNode }) {
 
       const currentAlertableOrderIds = new Set(
         allActiveOrders
-          .filter((order) => ['OFFERED_TO_RIDER', 'RIDER_ASSIGNED'].includes(order.status))
+          .filter((order) => order.status === 'OFFERED_TO_RIDER')
+          .filter((order) => !suppressedAlertOrderIdsRef.current.has(order.orderId))
+          .filter((order) => !mutedAlertOrderIdsRef.current.has(order.orderId))
           .map((order) => order.orderId)
       );
+
+      // Track all orders ever seen as OFFERED_TO_RIDER so we can distinguish accepted from force-assigned
+      for (const order of offeredResponse.orders) {
+        everOfferedOrderIdsRef.current.add(order.orderId);
+      }
+
+      for (const order of allActiveOrders) {
+        if (order.status !== 'OFFERED_TO_RIDER') {
+          suppressedAlertOrderIdsRef.current.delete(order.orderId);
+          mutedAlertOrderIdsRef.current.delete(order.orderId);
+        }
+      }
+
+      // Detect force-assigned orders: new RIDER_ASSIGNED that were never offered
+      if (hasFetchedOrdersRef.current) {
+        for (const order of riderAssignedResponse.orders) {
+          const orderId = order.orderId;
+          if (
+            !knownOrderIdsRef.current.has(orderId) &&
+            !everOfferedOrderIdsRef.current.has(orderId) &&
+            !suppressedAlertOrderIdsRef.current.has(orderId) &&
+            !mutedAlertOrderIdsRef.current.has(orderId) &&
+            !forceAssignedAlertingIdsRef.current.has(orderId)
+          ) {
+            // Force-assigned by admin — start looping alert via native service
+            forceAssignedAlertingIdsRef.current.add(orderId);
+            startRiderRideAlert(
+              orderId,
+              (order as any).restaurantName || 'Nearby restaurant',
+              (order as any).deliveryFee || 0,
+            );
+          }
+        }
+      }
+
+      // Clean up force-assigned alerting set for orders no longer RIDER_ASSIGNED
+      const currentRiderAssignedIds = new Set(riderAssignedResponse.orders.map((o) => o.orderId));
+      for (const orderId of [...forceAssignedAlertingIdsRef.current]) {
+        if (!currentRiderAssignedIds.has(orderId)) {
+          forceAssignedAlertingIdsRef.current.delete(orderId);
+          stopRiderRideAlert(orderId);
+        }
+      }
 
       const incomingAlertOrders = allActiveOrders.filter(
         (order) =>
@@ -165,6 +248,12 @@ export function OrdersProvider({ children }: { children: ReactNode }) {
         [...alertingOrderIdsRef.current].filter((orderId) => currentAlertableOrderIds.has(orderId))
       );
 
+      const visibleRingingOrderIds = new Set([
+        ...alertingOrderIdsRef.current,
+        ...currentAlertableOrderIds,
+        ...forceAssignedAlertingIdsRef.current,
+      ]);
+      syncRingingOrderIdsState(visibleRingingOrderIds);
       await syncAlertPlayback();
       knownOrderIdsRef.current = new Set(allActiveOrders.map((order) => order.orderId));
       hasFetchedOrdersRef.current = true;
@@ -174,12 +263,14 @@ export function OrdersProvider({ children }: { children: ReactNode }) {
     } finally {
       setIsLoading(false);
     }
-  }, [rider, isOnline]);
+  }, [rider, isOnline, syncAlertPlayback, syncRingingOrderIdsState]);
 
   const acceptOrder = useCallback(async (orderId: string, status: string) => {
     if (!rider) return;
 
     try {
+      suppressOrderAlert(orderId);
+      muteRiderRideAlert(orderId);
       await riderOrderAPI.acceptOrder(rider.riderId, orderId, status);
       await clearAlertForOrder(orderId);
       await refreshOrders();
@@ -188,12 +279,13 @@ export function OrdersProvider({ children }: { children: ReactNode }) {
       console.error('Failed to accept order:', error);
       throw error;
     }
-  }, [rider, clearAlertForOrder, refreshOrders]);
+  }, [rider, clearAlertForOrder, refreshOrders, suppressOrderAlert]);
 
   const rejectOrder = useCallback(async (orderId: string, reason: string) => {
     if (!rider) return;
 
     try {
+      suppressOrderAlert(orderId);
       await riderOrderAPI.rejectOrder(rider.riderId, orderId, reason);
       await clearAlertForOrder(orderId);
       await refreshOrders();
@@ -202,11 +294,44 @@ export function OrdersProvider({ children }: { children: ReactNode }) {
       console.error('Failed to reject order:', error);
       throw error;
     }
-  }, [rider, clearAlertForOrder, refreshOrders]);
+  }, [rider, clearAlertForOrder, refreshOrders, suppressOrderAlert]);
 
   const dismissOrderAlert = useCallback(async (orderId: string) => {
     await clearAlertForOrder(orderId);
   }, [clearAlertForOrder]);
+
+  const muteOrderAlert = useCallback(async (orderId: string) => {
+    mutedAlertOrderIdsRef.current.add(orderId);
+    forceAssignedAlertingIdsRef.current.delete(orderId);
+    muteRiderRideAlert(orderId);
+    await clearAlertForOrder(orderId);
+  }, [clearAlertForOrder]);
+
+  const muteAllAlerts = useCallback(async () => {
+    // Mute every currently ringing order in native service (stops looping MediaPlayer + marks muted)
+    muteAllRiderAlerts();
+    // Stop in-app expo-av ring
+    await stopNewOrderAlert();
+    // Mute all in local tracking sets
+    for (const orderId of alertingOrderIdsRef.current) {
+      mutedAlertOrderIdsRef.current.add(orderId);
+    }
+    for (const orderId of forceAssignedAlertingIdsRef.current) {
+      mutedAlertOrderIdsRef.current.add(orderId);
+    }
+    alertingOrderIdsRef.current.clear();
+    forceAssignedAlertingIdsRef.current.clear();
+    setRingingOrderIds([]);
+  }, []);
+
+  const markOrderAlerting = useCallback((orderId: string) => {
+    if (!orderId) return;
+    if (suppressedAlertOrderIdsRef.current.has(orderId)) return;
+    if (mutedAlertOrderIdsRef.current.has(orderId)) return;
+
+    alertingOrderIdsRef.current.add(orderId);
+    syncRingingOrderIdsState();
+  }, [syncRingingOrderIdsState]);
 
   const updateOrderStatus = useCallback(async (orderId: string, status: string, otp?: string) => {
     if (!rider) return;
@@ -255,6 +380,7 @@ export function OrdersProvider({ children }: { children: ReactNode }) {
         orders,
         activeOrders,
         completedOrders,
+        ringingOrderIds,
         riderRating,
         riderRatedCount,
         isLoading,
@@ -264,6 +390,9 @@ export function OrdersProvider({ children }: { children: ReactNode }) {
         acceptOrder,
         rejectOrder,
         dismissOrderAlert,
+        muteOrderAlert,
+        muteAllAlerts,
+        markOrderAlerting,
         updateOrderStatus,
       }}
     >

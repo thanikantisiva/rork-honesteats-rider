@@ -3,7 +3,7 @@
  */
 
 import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, Image, StyleSheet, Alert } from 'react-native';
+import { View, Text, TouchableOpacity, Image, StyleSheet, Alert, Linking } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { Camera, Image as ImageIcon, X } from 'lucide-react-native';
 import { validateImageSize, getImageSizeMB } from '@/utils/image-utils';
@@ -33,13 +33,27 @@ export function DocumentCapture({
       if (useCamera) {
         const { status } = await ImagePicker.requestCameraPermissionsAsync();
         if (status !== 'granted') {
-          Alert.alert('Permission Required', 'Camera permission is required to take photos');
+          Alert.alert(
+            'Permission Required',
+            'Camera permission is mandatory to continue rider onboarding.',
+            [
+              { text: 'Cancel', style: 'cancel' },
+              { text: 'Open Settings', onPress: () => Linking.openSettings().catch(() => {}) },
+            ],
+          );
           return;
         }
       } else {
         const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
         if (status !== 'granted') {
-          Alert.alert('Permission Required', 'Photo library permission is required');
+          Alert.alert(
+            'Permission Required',
+            'Photos permission is mandatory to continue rider onboarding.',
+            [
+              { text: 'Cancel', style: 'cancel' },
+              { text: 'Open Settings', onPress: () => Linking.openSettings().catch(() => {}) },
+            ],
+          );
           return;
         }
       }

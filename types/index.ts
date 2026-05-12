@@ -96,6 +96,50 @@ export interface Earnings {
   settled?: boolean;
   settledAt?: string | null;
   createdAt?: string;
+  entryType?: 'ORDER_EARNING' | 'MILESTONE_BONUS';
+  bonusType?: string | null;
+  milestoneStops?: number | null;
+  campaignStartDate?: string | null;
+  campaignEndDate?: string | null;
+  bonusLabel?: string | null;
+}
+
+export interface RiderBonusMilestone {
+  stops: number;
+  amount: number;
+}
+
+export interface RiderBonusCampaign {
+  enabled: boolean;
+  title: string;
+  description?: string;
+  startDate: string;
+  endDate: string;
+  targetStops: number;
+  milestones: RiderBonusMilestone[];
+  status?: 'upcoming' | 'active' | 'ended';
+}
+
+export interface RiderBonusReachedMilestone extends RiderBonusMilestone {
+  credited: boolean;
+  creditedAt?: string | null;
+}
+
+export interface RiderBonusProgress {
+  completedStops: number;
+  remainingStops: number;
+  reachedMilestones: RiderBonusReachedMilestone[];
+  nextMilestone?: {
+    stops: number;
+    amount: number;
+    remainingStops: number;
+  } | null;
+  totalBonusEarned?: number;
+}
+
+export interface RiderBonusProgressResponse {
+  campaign: RiderBonusCampaign | null;
+  progress: RiderBonusProgress | null;
 }
 
 export interface EarningsSummary {
@@ -106,5 +150,9 @@ export interface EarningsSummary {
   totalEarnings: number;
   totalTips: number;
   totalIncentives?: number;
+  totalBonusEarnings?: number;
+  deliveryEarnings?: number;
   dailyBreakdown?: Earnings[];
+  bonusCampaign?: RiderBonusCampaign | null;
+  bonusProgress?: RiderBonusProgress | null;
 }

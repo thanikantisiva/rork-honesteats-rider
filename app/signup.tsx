@@ -201,7 +201,7 @@ export default function SignupScreen() {
       <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
         <View style={styles.header}>
           <TouchableOpacity style={styles.backButton} onPress={handleBack}>
-            <ChevronLeft size={22} color={riderTheme.colors.textPrimary} />
+            <ChevronLeft size={22} color="#FFFFFF" />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Partner Onboarding</Text>
           <View style={{ width: 40 }} />
@@ -473,9 +473,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingTop: 8,
     paddingBottom: 12,
-    backgroundColor: riderTheme.colors.surface,
+    backgroundColor: '#1A0C08',
     borderBottomWidth: 1,
-    borderBottomColor: riderTheme.colors.border,
+    borderBottomColor: 'rgba(255, 197, 46, 0.12)',
   },
   backButton: {
     width: 40,
@@ -486,7 +486,7 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 18,
     fontWeight: '700',
-    color: riderTheme.colors.textPrimary,
+    color: '#FFFFFF',
   },
   stepperWrap: {
     backgroundColor: riderTheme.colors.surface,

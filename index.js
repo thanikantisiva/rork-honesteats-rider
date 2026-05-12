@@ -98,7 +98,7 @@ notifee.onBackgroundEvent(async ({ type, detail }) => {
     if (actionId === 'ACCEPT_ORDER') {
       console.log(`[BG Notifee] Accepting order ${orderId}`);
       await fetch(
-        `${baseUrl}/api/v1/riders/${riderId}/orders/${orderId}/accept/OFFERED_TO_RIDER`,
+        `${baseUrl}/api/v1/riders/${riderId}/orders/${orderId}/accept/RIDER_ASSIGNED`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
