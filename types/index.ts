@@ -96,12 +96,14 @@ export interface Earnings {
   settled?: boolean;
   settledAt?: string | null;
   createdAt?: string;
-  entryType?: 'ORDER_EARNING' | 'MILESTONE_BONUS';
+  entryType?: 'ORDER_EARNING' | 'MILESTONE_BONUS' | 'COD_AMOUNT_COLLECTED';
   bonusType?: string | null;
   milestoneStops?: number | null;
   campaignStartDate?: string | null;
   campaignEndDate?: string | null;
   bonusLabel?: string | null;
+  paymentChannel?: string | null;
+  cashCollected?: number;
 }
 
 export interface RiderBonusMilestone {
@@ -151,6 +153,7 @@ export interface EarningsSummary {
   totalTips: number;
   totalIncentives?: number;
   totalBonusEarnings?: number;
+  totalCashCollected?: number;
   deliveryEarnings?: number;
   dailyBreakdown?: Earnings[];
   bonusCampaign?: RiderBonusCampaign | null;

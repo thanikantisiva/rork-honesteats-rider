@@ -46,6 +46,7 @@ export function OrdersProvider({ children }: { children: ReactNode }) {
   const [isLoadingCompleted, setIsLoadingCompleted] = useState(false);
   const knownOrderIdsRef = useRef<Set<string>>(new Set());
   const alertingOrderIdsRef = useRef<Set<string>>(new Set());
+  const alertedOrderIdsRef = useRef<Set<string>>(new Set());
   const forceAssignedAlertingIdsRef = useRef<Set<string>>(new Set());
   const everOfferedOrderIdsRef = useRef<Set<string>>(new Set());
   const hasFetchedOrdersRef = useRef(false);
@@ -94,6 +95,7 @@ export function OrdersProvider({ children }: { children: ReactNode }) {
     if (!isLoggedIn || !rider) {
       knownOrderIdsRef.current = new Set();
       alertingOrderIdsRef.current = new Set();
+      alertedOrderIdsRef.current = new Set();
       forceAssignedAlertingIdsRef.current = new Set();
       everOfferedOrderIdsRef.current = new Set();
       suppressedAlertOrderIdsRef.current = new Map();
@@ -176,7 +178,6 @@ export function OrdersProvider({ children }: { children: ReactNode }) {
       for (const order of allActiveOrders) {
         if (order.status !== 'OFFERED_TO_RIDER') {
           suppressedAlertOrderIdsRef.current.delete(order.orderId);
-          mutedAlertOrderIdsRef.current.delete(order.orderId);
         }
       }
 
@@ -187,11 +188,13 @@ export function OrdersProvider({ children }: { children: ReactNode }) {
           if (
             !knownOrderIdsRef.current.has(orderId) &&
             !everOfferedOrderIdsRef.current.has(orderId) &&
+            !alertedOrderIdsRef.current.has(orderId) &&
             !suppressedAlertOrderIdsRef.current.has(orderId) &&
             !mutedAlertOrderIdsRef.current.has(orderId) &&
             !forceAssignedAlertingIdsRef.current.has(orderId)
           ) {
             // Force-assigned by admin — start looping alert via native service
+            alertedOrderIdsRef.current.add(orderId);
             forceAssignedAlertingIdsRef.current.add(orderId);
             startRiderRideAlert(
               orderId,
@@ -214,7 +217,8 @@ export function OrdersProvider({ children }: { children: ReactNode }) {
       const incomingAlertOrders = allActiveOrders.filter(
         (order) =>
           currentAlertableOrderIds.has(order.orderId) &&
-          !knownOrderIdsRef.current.has(order.orderId)
+          !knownOrderIdsRef.current.has(order.orderId) &&
+          !alertedOrderIdsRef.current.has(order.orderId)
       );
       
       setOrders(allActiveOrders);
@@ -225,6 +229,7 @@ export function OrdersProvider({ children }: { children: ReactNode }) {
 
       if (hasFetchedOrdersRef.current) {
         for (const order of incomingAlertOrders) {
+          alertedOrderIdsRef.current.add(order.orderId);
           alertingOrderIdsRef.current.add(order.orderId);
         }
       } else {
@@ -270,6 +275,7 @@ export function OrdersProvider({ children }: { children: ReactNode }) {
 
     try {
       suppressOrderAlert(orderId);
+      mutedAlertOrderIdsRef.current.add(orderId);
       muteRiderRideAlert(orderId);
       await riderOrderAPI.acceptOrder(rider.riderId, orderId, status);
       await clearAlertForOrder(orderId);
@@ -286,6 +292,8 @@ export function OrdersProvider({ children }: { children: ReactNode }) {
 
     try {
       suppressOrderAlert(orderId);
+      mutedAlertOrderIdsRef.current.add(orderId);
+      muteRiderRideAlert(orderId);
       await riderOrderAPI.rejectOrder(rider.riderId, orderId, reason);
       await clearAlertForOrder(orderId);
       await refreshOrders();
@@ -328,7 +336,9 @@ export function OrdersProvider({ children }: { children: ReactNode }) {
     if (!orderId) return;
     if (suppressedAlertOrderIdsRef.current.has(orderId)) return;
     if (mutedAlertOrderIdsRef.current.has(orderId)) return;
+    if (alertedOrderIdsRef.current.has(orderId)) return;
 
+    alertedOrderIdsRef.current.add(orderId);
     alertingOrderIdsRef.current.add(orderId);
     syncRingingOrderIdsState();
   }, [syncRingingOrderIdsState]);

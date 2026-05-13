@@ -15,7 +15,7 @@ import {
   Dimensions,
 } from 'react-native';
 import { Stack } from 'expo-router';
-import { IndianRupee, Package, Clock, TrendingUp, Award, CheckCircle2, Calendar, ChevronLeft, ChevronRight, CalendarRange } from 'lucide-react-native';
+import { IndianRupee, Package, Clock, TrendingUp, Award, CheckCircle2, Calendar, ChevronLeft, ChevronRight, CalendarRange, Wallet } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '@/contexts/AuthContext';
 import { riderEarningsAPI } from '@/lib/api';
@@ -23,7 +23,7 @@ import { Earnings, EarningsSummary } from '@/types';
 import { riderTheme } from '@/theme/riderTheme';
 
 type Mode = 'today' | '7d' | '30d' | 'custom';
-type BreakdownTab = 'unsettled' | 'settled';
+type BreakdownTab = 'unsettled' | 'settled' | 'cod';
 
 const SCREEN_W = Dimensions.get('window').width;
 
@@ -243,10 +243,29 @@ export default function EarningsScreen() {
   const getDisplayOrderId = (v?: string, orderId?: string | null) =>
     orderId || (v?.includes('#') ? v.split('#')[1] : '');
   const isBonusEntry = (entry: Earnings) => entry.entryType === 'MILESTONE_BONUS';
+  const isCodEntry = (entry: Earnings) => entry.entryType === 'COD_AMOUNT_COLLECTED';
 
-  const unsettled = earnings?.dailyBreakdown?.filter((d) => !d.settled) ?? [];
-  const settled = earnings?.dailyBreakdown?.filter((d) => d.settled) ?? [];
-  const rows = selectedBreakdownTab === 'unsettled' ? unsettled : settled;
+  // COD rows live in their own tab; keep them out of the regular earnings tabs.
+  const earningRows = earnings?.dailyBreakdown?.filter((d) => !isCodEntry(d)) ?? [];
+  const codRows = earnings?.dailyBreakdown?.filter((d) => isCodEntry(d)) ?? [];
+  const unsettled = earningRows.filter((d) => !d.settled);
+  const settled = earningRows.filter((d) => d.settled);
+  const rows =
+    selectedBreakdownTab === 'unsettled'
+      ? unsettled
+      : selectedBreakdownTab === 'settled'
+        ? settled
+        : codRows;
+
+  const totalCashCollected = earnings?.totalCashCollected ?? 0;
+
+  // Hero total — always computed client-side from non-COD rows so COD cash
+  // never inflates the displayed earnings, regardless of whether the
+  // backend has been redeployed with the COD-excluding aggregate.
+  const displayTotalEarnings = earningRows.reduce(
+    (sum, r) => sum + (r.totalEarnings ?? 0),
+    0,
+  );
 
   return (
     <>
@@ -260,34 +279,42 @@ export default function EarningsScreen() {
             <ActivityIndicator size="large" color="#FFC52E" style={{ marginVertical: 16 }} />
           ) : (
             <Text style={styles.heroAmount}>
-              ₹{((earnings?.totalEarnings) ?? 0).toFixed(2)}
+              ₹{displayTotalEarnings.toFixed(2)}
             </Text>
           )}
 
           {/* Mini stats */}
           <View style={styles.miniStats}>
             <View style={styles.miniStat}>
-              <Package size={13} color="rgba(255,255,255,0.5)" strokeWidth={2} />
+              <Package size={12} color="rgba(255,255,255,0.5)" strokeWidth={2} />
               <Text style={styles.miniStatVal}>{earnings?.totalDeliveries ?? 0}</Text>
               <Text style={styles.miniStatLbl}>Deliveries</Text>
             </View>
             <View style={styles.miniDivider} />
             <View style={styles.miniStat}>
-              <TrendingUp size={13} color="rgba(255,255,255,0.5)" strokeWidth={2} />
+              <TrendingUp size={12} color="rgba(255,255,255,0.5)" strokeWidth={2} />
               <Text style={styles.miniStatVal}>₹{(earnings?.totalTips ?? 0).toFixed(0)}</Text>
               <Text style={styles.miniStatLbl}>Tips</Text>
             </View>
             <View style={styles.miniDivider} />
             <View style={styles.miniStat}>
-              <Award size={13} color="rgba(255,255,255,0.5)" strokeWidth={2} />
+              <Award size={12} color="rgba(255,255,255,0.5)" strokeWidth={2} />
               <Text style={styles.miniStatVal}>₹{(earnings?.totalIncentives ?? 0).toFixed(0)}</Text>
               <Text style={styles.miniStatLbl}>Incentives</Text>
             </View>
             <View style={styles.miniDivider} />
             <View style={styles.miniStat}>
-              <Award size={13} color="#FFC52E" strokeWidth={2} />
+              <Award size={12} color="#FFC52E" strokeWidth={2} />
               <Text style={styles.miniStatVal}>₹{(earnings?.totalBonusEarnings ?? 0).toFixed(0)}</Text>
               <Text style={styles.miniStatLbl}>Bonus</Text>
+            </View>
+            <View style={styles.miniDivider} />
+            <View style={styles.miniStat}>
+              <Wallet size={12} color="#FFC52E" strokeWidth={2} />
+              <Text style={[styles.miniStatVal, styles.miniStatValCod]}>
+                ₹{totalCashCollected.toFixed(0)}
+              </Text>
+              <Text style={styles.miniStatLbl}>COD</Text>
             </View>
           </View>
 
@@ -399,7 +426,7 @@ export default function EarningsScreen() {
           )}
           {!isLoading && earnings && earnings.dailyBreakdown && earnings.dailyBreakdown.length > 0 && (
             <>
-              {/* Unsettled / Settled tabs */}
+              {/* Unsettled / Settled / CODs tabs */}
               <View style={styles.tabRow}>
                 <TouchableOpacity
                   style={[styles.tab, selectedBreakdownTab === 'unsettled' && styles.tabActive]}
@@ -419,81 +446,111 @@ export default function EarningsScreen() {
                     Settled · {settled.length}
                   </Text>
                 </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.tab, selectedBreakdownTab === 'cod' && styles.tabActiveCod]}
+                  onPress={() => setSelectedBreakdownTab('cod')}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[styles.tabTxt, selectedBreakdownTab === 'cod' && styles.tabTxtActiveCod]}>
+                    CODs · {codRows.length}
+                  </Text>
+                </TouchableOpacity>
               </View>
 
               {rows.length === 0 ? (
                 <View style={styles.emptyWrap}>
-                  <Text style={styles.emptyText}>No {selectedBreakdownTab} entries for this period.</Text>
+                  <Text style={styles.emptyText}>
+                    {selectedBreakdownTab === 'cod'
+                      ? 'No COD collections for this period.'
+                      : `No ${selectedBreakdownTab} entries for this period.`}
+                  </Text>
                 </View>
               ) : (
                 <View style={styles.rowList}>
-                  {rows.map((day, i) => (
-                    <View key={i} style={styles.row}>
-                      <View
-                        style={[
-                          styles.rowIconCircle,
-                          day.settled && styles.rowIconCircleSettled,
-                          isBonusEntry(day) && styles.rowIconCircleBonus,
-                        ]}
-                      >
-                        {day.settled ? (
-                          <CheckCircle2 size={18} color="#22C55E" strokeWidth={2.5} />
-                        ) : isBonusEntry(day) ? (
-                          <Award size={18} color="#D97706" strokeWidth={2.5} />
-                        ) : (
-                          <Package size={18} color="#E8352A" strokeWidth={2.5} />
-                        )}
-                      </View>
-
-                      <View style={styles.rowInfo}>
-                        <Text style={styles.rowOrderId} numberOfLines={1}>
-                          {isBonusEntry(day)
-                            ? day.bonusLabel || 'Milestone Bonus'
-                            : getDisplayOrderId(day.date, day.orderId) || 'Delivery'}
-                        </Text>
-                        <View style={styles.rowMeta}>
-                          {day.date && (
-                            <View style={styles.rowMetaItem}>
-                              <Calendar size={11} color="#9E7A6A" strokeWidth={2} />
-                              <Text style={styles.rowMetaTxt}>{getDisplayDate(day.date)}</Text>
-                            </View>
-                          )}
-                          {isBonusEntry(day) ? (
-                            <View style={styles.rowMetaItem}>
-                              <Award size={11} color="#9E7A6A" strokeWidth={2} />
-                              <Text style={styles.rowMetaTxt}>
-                                {day.milestoneStops ?? 0} stop target reached
-                              </Text>
-                            </View>
+                  {rows.map((day, i) => {
+                    const codEntry = isCodEntry(day);
+                    const bonusEntry = isBonusEntry(day);
+                    return (
+                      <View key={i} style={styles.row}>
+                        <View
+                          style={[
+                            styles.rowIconCircle,
+                            day.settled && styles.rowIconCircleSettled,
+                            bonusEntry && styles.rowIconCircleBonus,
+                            codEntry && styles.rowIconCircleCod,
+                          ]}
+                        >
+                          {day.settled ? (
+                            <CheckCircle2 size={18} color="#22C55E" strokeWidth={2.5} />
+                          ) : bonusEntry ? (
+                            <Award size={18} color="#D97706" strokeWidth={2.5} />
+                          ) : codEntry ? (
+                            <Wallet size={18} color="#1A0C08" strokeWidth={2.5} />
                           ) : (
-                            <>
-                              <View style={styles.rowMetaItem}>
-                                <Package size={11} color="#9E7A6A" strokeWidth={2} />
-                                <Text style={styles.rowMetaTxt}>{day.totalDeliveries ?? 0} deliveries</Text>
-                              </View>
-                              <View style={styles.rowMetaItem}>
-                                <Clock size={11} color="#9E7A6A" strokeWidth={2} />
-                                <Text style={styles.rowMetaTxt}>{day.onlineTimeMinutes ?? 0}m</Text>
-                              </View>
-                            </>
+                            <Package size={18} color="#E8352A" strokeWidth={2.5} />
                           )}
                         </View>
-                        {day.settled && day.settlementId && (
-                          <Text style={styles.settlementId}>ID: {day.settlementId}</Text>
-                        )}
-                      </View>
 
-                      <Text
-                        style={[
-                          styles.rowAmount,
-                          day.settled && styles.rowAmountSettled,
-                          isBonusEntry(day) && styles.rowAmountBonus,
-                        ]}
-                      >
-                        ₹{(day.totalEarnings ?? 0).toFixed(0)}
-                      </Text>
-                    </View>
-                  ))}
+                        <View style={styles.rowInfo}>
+                          <Text style={styles.rowOrderId} numberOfLines={1}>
+                            {bonusEntry
+                              ? day.bonusLabel || 'Milestone Bonus'
+                              : codEntry
+                                ? `COD · ${getDisplayOrderId(day.date, day.orderId) || 'Order'}`
+                                : getDisplayOrderId(day.date, day.orderId) || 'Delivery'}
+                          </Text>
+                          <View style={styles.rowMeta}>
+                            {day.date && (
+                              <View style={styles.rowMetaItem}>
+                                <Calendar size={11} color="#9E7A6A" strokeWidth={2} />
+                                <Text style={styles.rowMetaTxt}>{getDisplayDate(day.date)}</Text>
+                              </View>
+                            )}
+                            {bonusEntry ? (
+                              <View style={styles.rowMetaItem}>
+                                <Award size={11} color="#9E7A6A" strokeWidth={2} />
+                                <Text style={styles.rowMetaTxt}>
+                                  {day.milestoneStops ?? 0} stop target reached
+                                </Text>
+                              </View>
+                            ) : codEntry ? (
+                              <View style={styles.rowMetaItem}>
+                                <Wallet size={11} color="#9E7A6A" strokeWidth={2} />
+                                <Text style={styles.rowMetaTxt}>Cash collected from customer</Text>
+                              </View>
+                            ) : (
+                              <>
+                                <View style={styles.rowMetaItem}>
+                                  <Package size={11} color="#9E7A6A" strokeWidth={2} />
+                                  <Text style={styles.rowMetaTxt}>{day.totalDeliveries ?? 0} deliveries</Text>
+                                </View>
+                                <View style={styles.rowMetaItem}>
+                                  <Clock size={11} color="#9E7A6A" strokeWidth={2} />
+                                  <Text style={styles.rowMetaTxt}>{day.onlineTimeMinutes ?? 0}m</Text>
+                                </View>
+                              </>
+                            )}
+                          </View>
+                          {day.settled && day.settlementId && (
+                            <Text style={styles.settlementId}>ID: {day.settlementId}</Text>
+                          )}
+                        </View>
+
+                        <Text
+                          style={[
+                            styles.rowAmount,
+                            day.settled && styles.rowAmountSettled,
+                            bonusEntry && styles.rowAmountBonus,
+                            codEntry && styles.rowAmountCod,
+                          ]}
+                        >
+                          {codEntry
+                            ? `₹${Math.abs(day.cashCollected ?? day.totalEarnings ?? 0).toFixed(0)}`
+                            : `₹${(day.totalEarnings ?? 0).toFixed(0)}`}
+                        </Text>
+                      </View>
+                    );
+                  })}
                 </View>
               )}
             </>
@@ -564,16 +621,17 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.06)',
     borderRadius: 16,
     paddingVertical: 12,
-    paddingHorizontal: 24,
+    paddingHorizontal: 14,
     marginBottom: 20,
     gap: 0,
     alignSelf: 'stretch',
     justifyContent: 'space-evenly',
   },
-  miniStat: { alignItems: 'center', gap: 3 },
-  miniStatVal: { fontSize: 16, fontWeight: '800', color: '#FFFFFF' },
-  miniStatLbl: { fontSize: 10, fontWeight: '500', color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', letterSpacing: 0.5 },
-  miniDivider: { width: 1, height: 32, backgroundColor: 'rgba(255,255,255,0.1)' },
+  miniStat: { alignItems: 'center', gap: 3, flex: 1 },
+  miniStatVal: { fontSize: 15, fontWeight: '800', color: '#FFFFFF' },
+  miniStatValCod: { color: '#FFC52E' },
+  miniStatLbl: { fontSize: 9.5, fontWeight: '500', color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', letterSpacing: 0.5 },
+  miniDivider: { width: 1, height: 30, backgroundColor: 'rgba(255,255,255,0.1)' },
 
   // PERIOD / RANGE ROW
   periodRow: { flexDirection: 'row', gap: 8, flexWrap: 'nowrap', justifyContent: 'center' },
@@ -665,8 +723,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#F8F3EF', borderWidth: 1, borderColor: '#E8DDD8',
   },
   tabActive: { backgroundColor: '#1A0C08', borderColor: '#1A0C08' },
+  tabActiveCod: { backgroundColor: '#FFC52E', borderColor: '#FFC52E' },
   tabTxt: { fontSize: 13, fontWeight: '700', color: '#9E7A6A' },
   tabTxtActive: { color: '#FFFFFF' },
+  tabTxtActiveCod: { color: '#1A0C08' },
 
   // FEED
   feed: { flex: 1 },
@@ -696,15 +756,20 @@ const styles = StyleSheet.create({
   },
   rowIconCircleSettled: { backgroundColor: '#DCFCE7' },
   rowIconCircleBonus: { backgroundColor: '#FEF3C7' },
+  rowIconCircleCod: { backgroundColor: '#FEF9C3', borderWidth: 1, borderColor: '#FACC15' },
   rowInfo: { flex: 1, gap: 4 },
   rowOrderId: { fontSize: 14, fontWeight: '800', color: '#1A0C08' },
   rowMeta: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   rowMetaItem: { flexDirection: 'row', alignItems: 'center', gap: 3 },
   rowMetaTxt: { fontSize: 11, fontWeight: '500', color: '#9E7A6A' },
   settlementId: { fontSize: 11, color: '#22C55E', fontWeight: '600', marginTop: 2 },
-  rowAmount: { fontSize: 18, fontWeight: '900', color: '#E8352A', flexShrink: 0 },
-  rowAmountSettled: { color: '#22C55E' },
-  rowAmountBonus: { color: '#D97706' },
+  // Amounts the rider actually earns/will receive are shown in green.
+  // COD rows (cash held by the rider, owed back to the platform) stay amber
+  // to visually mark them as "not your earnings".
+  rowAmount: { fontSize: 18, fontWeight: '900', color: '#16A34A', flexShrink: 0 },
+  rowAmountSettled: { color: '#16A34A' },
+  rowAmountBonus: { color: '#16A34A' },
+  rowAmountCod: { color: '#A16207' },
 
   // EMPTY (within feed)
   emptyWrap: { alignItems: 'center', paddingTop: 40 },

@@ -43,6 +43,7 @@ const DEFAULT_NOTIFICATION_BODY = 'You have a new update';
 
 /** Same asset as app.json "icon" — used for notification large icon / iOS thumbnail. */
 const RIDER_APP_ICON = require('../assets/images/icon.png');
+const RIDE_ALERT_STATUSES = new Set(['OFFERED_TO_RIDER', 'RIDER_ASSIGNED']);
 
 export async function ensureNotificationChannel(): Promise<string> {
   if (Platform.OS === 'ios') {
@@ -124,6 +125,23 @@ function normalizeNotificationData(data: any): Record<string, string> {
   }, {});
 }
 
+function shouldStartRideAlert(data: Record<string, any>): boolean {
+  const type = String(data.type ?? '');
+  if (type !== 'order_assigned' && type !== 'order_accepted') {
+    return false;
+  }
+
+  // If backend sends the concrete order status, only ring for statuses that
+  // need rider attention. Older payloads may omit status; keep those alertable
+  // and let the native per-order dedupe suppress accepted-transition repeats.
+  const status = data.status ?? data.orderStatus;
+  return !status || RIDE_ALERT_STATUSES.has(String(status).toUpperCase());
+}
+
+function isRiderAlertNotificationType(type: unknown): boolean {
+  return type === 'order_assigned' || type === 'order_accepted';
+}
+
 function getNotificationTitle(remoteMessage: any): string {
   return (
     remoteMessage?.notification?.title ||
@@ -162,7 +180,7 @@ export async function cancelRiderLoopingPushNotifications(): Promise<void> {
     const displayed = await notifee.getDisplayedNotifications();
     for (const entry of displayed) {
       const t = entry.notification?.data?.type;
-      if (t === 'order_assigned' || t === 'order_accepted') {
+      if (isRiderAlertNotificationType(t)) {
         const nid = entry.id;
         if (nid) {
           await notifee.cancelDisplayedNotification(nid);
@@ -425,7 +443,7 @@ export function setupNotificationListeners(
     // The bubble owns audio/vibration; the channel sound here only chimes
     // once for the heads-up animation.
     const data = remoteMessage?.data ?? {};
-    if ((data.type === 'order_assigned' || data.type === 'order_accepted') && data.orderId) {
+    if (shouldStartRideAlert(data) && data.orderId) {
       startRiderRideAlert(
         String(data.orderId),
         String(data.restaurantName || 'a nearby restaurant'),

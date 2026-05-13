@@ -10,6 +10,18 @@ import { startRiderRideAlert, stopRiderRideAlert } from './services/rider-floati
 import './tasks/background-location';
 
 const RIDE_ALERT_TYPES = new Set(['order_assigned', 'order_accepted']);
+const RIDE_ALERT_STATUSES = new Set(['OFFERED_TO_RIDER', 'RIDER_ASSIGNED']);
+
+function shouldStartRideAlert(data) {
+  if (!data?.type || !RIDE_ALERT_TYPES.has(String(data.type))) {
+    return false;
+  }
+
+  // Older push payloads may not include status. Keep those alertable and let
+  // the native service's per-order "already alerted" set suppress duplicates.
+  const status = data.status || data.orderStatus;
+  return !status || RIDE_ALERT_STATUSES.has(String(status).toUpperCase());
+}
 
 messaging().setBackgroundMessageHandler(async (remoteMessage) => {
   console.log('FCM notification received in background (rider):', remoteMessage);
@@ -23,7 +35,7 @@ messaging().setBackgroundMessageHandler(async (remoteMessage) => {
   // play the channel sound once and stop (FLAG_INSISTENT is a no-op when
   // the channel itself owns the sound).
   const data = remoteMessage?.data ?? {};
-  if (data.type && RIDE_ALERT_TYPES.has(data.type) && data.orderId) {
+  if (shouldStartRideAlert(data) && data.orderId) {
     startRiderRideAlert(
       String(data.orderId),
       String(data.restaurantName || 'a nearby restaurant'),
